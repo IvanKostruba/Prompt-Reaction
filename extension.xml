@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+	Fantasy Grounds is copyright SmiteWorks USA LLC, 2004-2023. All Rights Reserved.
+	
+	No core Fantasy Grounds files have been modified to create this extension.
+	If you want to incorporate this into one of your own extensions, have at it, but just credit me.
+
+	Credit for the icon goes to flaticon.com who generously allow free use with attribution:
+	<a href="https://www.flaticon.com/free-icons/return" title="return icons">Return icons created by Kiranshastry - Flaticon</a>
+
+	Changelog:
+		1.0.0 - Initial release
+-->
+<root version="1.0" release="1.0.1">
+	<announcement text="illahad's Prompt Reaction v1.0.0 for 5E ruleset." font="emotefont" icon="react_prompt"/>
+ 	<properties>
+		<name>Feature: illahad's Prompt Reaction</name>
+		<version>1.0.0</version>
+		<author>illahad (Ivan Kostruba)</author>
+		<description>When a monster has a reaction and its trigger comes up, a prompt will appear in the chat.</description>
+		<ruleset>
+			<name>5E</name>
+		</ruleset>
+	</properties>
+	<base>
+		<includefile source="strings/reactions_prompt.xml"/>
+
+		<icon name="react_prompt" file="images/react_back.png" />
+
+		<script name="ReactionsPrompt" file="scripts/reactions_prompt.lua" />
+	</base>
+</root>
