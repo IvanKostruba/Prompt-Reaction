@@ -3,15 +3,15 @@ function registerOptions()
 		{ labels = "option_val_npc_link|option_val_power_desc|option_val_off", values = "npc_ref|power_desc|off", baselabel = "option_val_power_link", baseval = "power_ref", default = "option_val_power_link" });
 	OptionsManager.registerOption2("REPRO_REPORT_PARSING", false, "option_header_REPRO", "option_label_REPRO_report_parsing", "option_entry_cycler",
 		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+	OptionsManager.registerOption2("REPRO_RECIPIENT", false, "option_header_REPRO", "option_label_REPRO_message_recipients", "option_entry_cycler",
+		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" });
 end
 
 function onInit()
 	registerOptions()
 
-	CombatManager2.onNPCPostAddReProOrig = CombatManager2.onNPCPostAdd
-	CombatManager2.onNPCPostAdd = postNPCAddDecorator
-	-- have to re-register since we replaced the registered function
-	CombatRecordManager.setRecordTypePostAddCallback("npc", CombatManager2.onNPCPostAdd);
+	onNPCPostAddReProOrig = CombatRecordManager.getRecordTypePostAddCallback("npc")
+	CombatRecordManager.setRecordTypePostAddCallback("npc", postNPCAddDecorator);
 
 	ActionAttack.applyAttackReProOrig = ActionAttack.applyAttack
 	ActionAttack.applyAttack = applyAttackDecorator
@@ -20,6 +20,7 @@ function onInit()
 	ActionDamage.applyDamage = applyDamageDecorator;
 end
 
+local isCTScanDone = false
 local ReactionOnSelf = {}
 local ReactionOnOther = {}
 
@@ -28,50 +29,48 @@ function addReaction(aTable, sID, aReaction)
 	else table.insert(aTable[sID], aReaction) end
 end
 
-function matchReaction(aFlags, aReaction)
-	if next(aFlags) == nil then return false end
-	for _, f in ipairs(aFlags) do
-		Debug.console(f)
-		Debug.console(aReaction.aTrigger[f])
-		if aReaction.aTrigger[f] == nil then return false end
+function ctListScan(ctNode)
+	if isCTScanDone then return false end
+	if type(ctNode) ~= "databasenode" then _, ctNode = ActorManager.getTypeAndNode(ctNode); end
+	for _,v in pairs(DB.getChildren(DB.getParent(ctNode))) do
+		scanActor(v)
 	end
+	isCTScanDone = true
 	return true
 end
 
 function postNPCAddDecorator(tCustom)
-	-- Call the original onPreAttackResolve function
-	CombatManager2.onNPCPostAddReProOrig(tCustom)
-
+	-- Call the original onNPCPostAdd callback
+	onNPCPostAddReProOrig(tCustom)
 	if not tCustom.nodeRecord or not tCustom.nodeCT then
 		return;
 	end
-	local rActor = ActorManager.resolveActor(tCustom.nodeCT);
-	local sCreatureType = DB.getValue(tCustom.nodeCT, "type", 0)
-	Debug.console(tCustom.nodeRecord)
-	Debug.console(tCustom.nodeCT)
-	Debug.console(rActor)
-	Debug.console(rActor.sName .. " " .. sCreatureType)
+	if not ctListScan(tCustom.nodeCT) then scanActor(tCustom.nodeCT) end
+end
+
+function scanActor(ctNode)
+	local rActor = ActorManager.resolveActor(ctNode);
+	if rActor.sType ~= "npc" then return end
 	aParsedName = parseName(rActor.sName)
-	-- rActor.sType -- 'npc'
 	reactorID = extractID(rActor)
-	Debug.console(n)
-	for _,v in ipairs(DB.getChildList(tCustom.nodeCT, "reactions")) do
+	for _,v in ipairs(DB.getChildList(ctNode, "reactions")) do
 		local sName = StringManager.trim(DB.getValue(v, "name", ""));
 		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""));
 		r = parseReaction(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
-		Debug.console(r)
+		-- Debug.console(r)
 		if r.aTrigger ~= nil and next(r.aTrigger) ~= nil then
 			r.vDBRecord = v
-			if r.sTarget == "self" then
+			if r.isSelf then
 				addReaction(ReactionOnSelf, reactorID, r)
 				sendParsingMessage(sName, r, false)
-			else
+			end
+			if r.isOther then
 				addReaction(ReactionOnOther, reactorID, r)
 				sendParsingMessage(sName, r, true)
 			end
 		end
 	end
-	for _,v in ipairs(DB.getChildList(tCustom.nodeCT, "traits")) do
+	for _,v in ipairs(DB.getChildList(ctNode, "traits")) do
 		local sName = StringManager.trim(DB.getValue(v, "name", ""));
 		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""));
 		tr = parseTrait(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
@@ -80,13 +79,9 @@ function postNPCAddDecorator(tCustom)
 			addReaction(ReactionOnSelf, reactorID, tr)
 			sendParsingMessage(sName, tr, false)
 		end
-		Debug.console(tr)
+		-- Debug.console(tr)
 	end
-	Debug.console("-----SELF-----")
-	Debug.console(ReactionOnSelf)
-	Debug.console("-----OTHER-----")
-	Debug.console(ReactionOnOther)
-	DB.addHandler(tCustom.nodeCT, "onDelete", onCombatantDelete);
+	DB.addHandler(ctNode, "onDelete", onCombatantDelete);
 end
 
 function extractID(rActor)
@@ -95,25 +90,23 @@ function extractID(rActor)
 end
 
 function onCombatantDelete(vNode)
-	-- sName = DB.getValue(vNode, "name", "");  NPC name
-	Debug.console(vNode)
 	DB.removeHandler(vNode, "onDelete", onCombatantDelete);
 	local rActor = ActorManager.resolveActor(vNode);
 	reactorID = extractID(rActor)
-	Debug.console(rActor)
-	Debug.console(reactorID)
 	ReactionOnSelf[reactorID] = nil
 	ReactionOnOther[reactorID] = nil
-	Debug.console("-----SELF 2-----")
-	Debug.console(ReactionOnSelf)
-	Debug.console("-----OTHER 2-----")
-	Debug.console(ReactionOnOther)
 end
 
 function parseName(sName)
 	aParsedName = StringManager.parseWords(sName:lower())
 	if StringManager.isNumberString(aParsedName[#aParsedName]) then table.remove(aParsedName) end
-	if aParsedName[1] == 'hellhound' then table.insert(aParsedName, 'hound') end
+	if aParsedName[1] == 'hellhound' then table.insert(aParsedName, 'hound')
+	elseif aParsedName[1] == 'ancient' or aParsedName[1] == 'adult' then
+		for i = 1, #aParsedName, 1 do
+			if aParsedName[i] == 'greatwyrm' then table.insert(aParsedName, 'dragon') end
+			if aParsedName[i] == 'wyrm' then table.insert(aParsedName, 'dragon') end
+		end
+	end
 	return aParsedName
 end
 
@@ -133,46 +126,104 @@ local STARTS_TURN = "TURN"
 local CRIT = "CRIT"
 local HEAL = "HEAL"
 
+function matchReaction(aAction, aReaction, rTarget)
+	-- TODO: maybe match: atk: range + result + damage ? Implication is what if the type is not known.
+	Debug.console("REACTION: ", aReaction)
+	if next(aAction.aFlags) == nil then return false end
+	for f, _ in pairs(aAction.aFlags) do
+		if aReaction.aTrigger[f] == nil then return false end
+	end
+	if aAction.aFlags[DAMAGE] then
+		if next(aReaction.aDamageTypes) ~= nil then
+			foundDamageType = false
+			for _, t in ipairs(aAction.aDamageTypes) do
+				for _, rt in ipairs(aReaction.aDamageTypes) do if t == rt then foundDamageType = true end end
+			end
+			Debug.console("DMG TYPES ", aReaction.aDamageType, aAction.aDamageTypes, foundDamageType)
+			if not foundDamageType then return false end
+		end
+	end
+	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget);
+	if DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
+		return false
+	end
+	-- TODO: add passive reactions that work independently of condition.
+	if not aAction.aFlags[DIES] and (EffectManager5E.hasEffectCondition(rTarget, "Unconscious") or
+		EffectManager5E.hasEffectCondition(rTarget, "Stunned") or
+		EffectManager5E.hasEffectCondition(rTarget, "Paralyzed") or
+		EffectManager5E.hasEffectCondition(rTarget, "Incapacitated") or
+		EffectManager5E.hasEffectCondition(rTarget, "Petrified"))
+	then
+		return false
+	end
+	if aReaction.aTrigger[VISION] and EffectManager5E.hasEffectCondition(rTarget, "Blinded") then
+		return false
+	end
+	return true
+end
+
+function matchAllReactions(aAction, rTarget)
+	Debug.console(" FLAGS: ", aAction)
+	reactorID = extractID(rTarget)
+	if ReactionOnSelf[reactorID] ~= nil then
+		for _, rs in ipairs(ReactionOnSelf[reactorID]) do
+			if matchReaction(aAction, rs, rTarget) then sendChatMessage(rTarget, rs) end
+		end
+	end
+	-- TODO: reaction on others not necessarily work on self. Currently triggered.
+	for id, reactionsList in pairs(ReactionOnOther) do
+		local sReactorCTNode = string.format("combattracker.list.id-%s", id)
+		local rActor = ActorManager.resolveActor(sReactorCTNode)
+		for _, ro in ipairs(reactionsList) do
+			if matchReaction(aAction, ro, rActor) then sendChatMessage(rActor, ro, rActor) end
+		end
+	end
+end
+
 function applyAttackDecorator(rSource, rTarget, rRoll)
 	-- call the original applyAttack method
 	ActionAttack.applyAttackReProOrig(rSource, rTarget, rRoll)
 
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
-	Debug.console("---TARGET---")
-	Debug.console(rTarget)
-	Debug.console("---ACTION---")
-	Debug.console(rRoll)
-	local aFlags = {}
-	if rRoll.sResult == "hit" or rRoll.sResult == "crit" then table.insert(aFlags,IS_HIT) else table.insert(aFlags,IS_MISSED) end
-	if rRoll.sRange == "M" then table.insert(aFlags,ATK_MELEE) elseif rRoll.sRange == "R" then table.insert(aFlags,ATK_RANGED) end
-	Debug.console(aFlags)
-	reactorID = extractID(rTarget)
-	if ReactionOnSelf[reactorID] ~= nil then
-		for _, r in ipairs(ReactionOnSelf[reactorID]) do
-			if matchReaction(aFlags, r) then
-				sendChatMessage(rTarget, r)
-			end
-		end
-	end
-	for id, r in ipairs(ReactionOnOther) do
-		if matchReaction(aFlags, r) then
-			local sReactorCTNode = string.format("combattracker.list.id-%s", id)
-			local rActor = ActorManager.resolveActor(sReactorCTNode)
-			sendChatMessage(rActor, r)
-		end
-	end
+	ctListScan(rTarget)
+	local aAction = {aFlags={}}
+	if rRoll.sResult == "hit" or rRoll.sResult == "crit" then aAction.aFlags[IS_HIT] = true
+	else aAction.aFlags[IS_MISSED] = true end
+	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
+	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
+	matchAllReactions(aAction, rTarget)
 end
 
 function applyDamageDecorator(rSource, rTarget, rRoll)
 	-- call the original applyAttack method
 	ActionDamage.applyDamageReProOrig(rSource, rTarget, rRoll)
 
+	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
+	ctListScan(rTarget)
 	local rDamageOutput = ActionDamage.decodeDamageText(rRoll.nTotal, rRoll.sDesc);
-	if rTarget.sType ~= "npc" or rDamageOutput.sType ~= "damage" then
-		-- Assume that sType == "charsheet" means it's a "PC".
-		-- Heals, temporary HP, recovery etc. skipped.
+	if rTarget.sType ~= "npc" or (rDamageOutput.sType ~= "damage" and rDamageOutput.sType ~= "heal") then
+		-- Assume that sType == "charsheet" means it's a "PC". Temporary HP, recovery etc. skipped.
 		return
 	end
+	Debug.console("applyDamage", rTarget, rRoll, rDamageOutput)
+	-- if rDamageOutput.nTotal == 0 then return end -- some reactions work when "subjected to damage"
+	local f = {}
+	if rDamageOutput.sType == "damage" then
+		dmgTypes = {}
+		f[DAMAGE] = true
+		for k, v in pairs(rDamageOutput.aDamageTypes) do
+			if v ~= 0 then table.insert(dmgTypes, k) end
+		end
+	elseif rDamageOutput.sType == "heal" then f[HEAL] = true end
+	matchAllReactions({aFlags=f, aDamageTypes=dmgTypes}, rTarget)
+	local targetStatus = ActorHealthManager.getHealthStatus(rTarget);
+	if ActorHealthManager.isDyingOrDeadStatus(targetStatus) then
+		matchAllReactions({aFlags={[DIES]=true}}, rTarget)
+		matchAllReactions({aFlags={[KILLS]=true}}, rSource)
+	end
+	-- rDamageOutput.sRange == '' -- for spell;  aDamageFilter={"melee"|"ranged"}
+	-- rRoll.sResults "[RESISTED]" "[EVADED]"
+	-- rRoll.sDesc
 end
 
 function sendChatMessage(rTarget, aReaction)
@@ -180,6 +231,7 @@ function sendChatMessage(rTarget, aReaction)
 	if sOutput == "off" then return end
 	local sName = StringManager.trim(DB.getValue(aReaction.vDBRecord, "name", ""));
 	local msg = ChatManager.createBaseMessage(rTarget);
+	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
 	msg.icon = "react_prompt"
 	msg.text = string.format("%s may be triggered", sName)
 	if sOutput == "power_desc" then
@@ -196,7 +248,9 @@ end
 function sendParsingMessage(sName, aReaction, isOther)
 	if OptionsManager.getOption("REPRO_REPORT_PARSING") == "off" then return end
 	local msg = ChatManager.createBaseMessage();
-	msg.text = string.format("[%s] Triggers:", sName)
+	msg.secret = true
+	msg.icon = "react_prompt"
+	msg.text = string.format("[%s] trigger:", sName)
 	if isOther then msg.text = msg.text .. " another creature" end
 	sAttackRange = "an"
 	local tr = aReaction.aTrigger
@@ -208,8 +262,8 @@ function sendParsingMessage(sName, aReaction, isOther)
 	elseif tr[IS_MISSED] then msg.text = string.format("%s missed by %s attack;", msg.text, sAttackRange) end
 	if tr[DAMAGE] then
 		local sTypes = "any"
-		if aReaction.aDamageType and next(aReaction.aDamageType) ~= nil then
-			sTypes = table.concat(aReaction.aDamageType, "|")
+		if aReaction.aDamageTypes and next(aReaction.aDamageTypes) ~= nil then
+			sTypes = table.concat(aReaction.aDamageTypes, "|")
 		end
 		msg.text = msg.text .. " takes [" .. sTypes .. "] damage;"
 	end
@@ -217,124 +271,275 @@ function sendParsingMessage(sName, aReaction, isOther)
 	if tr[DIES] then msg.text = msg.text .. " dies;" end
 	if tr[FAILS_SAVE] then msg.text = msg.text .. " fails a save;" end
 	if tr[HEAL] then msg.text = msg.text .. " regains hp;" end
+	if tr[STARTS_TURN] then msg.text = msg.text .. " a creature starts its turn;" end
 	Comm.deliverChatMessage(msg);
 end
 
-local aOtherOrAlly = {"another","other","ally","allies"}
-
 function parseReaction(sName, aActorName, aPowerWords)
-	Debug.console("Reaction " .. sName);
-	Debug.console(aActorName);
-	local aReaction = {}
+	Debug.console("Reaction ", sName, aActorName);
+	local aReaction = {isSelf=true}
 	local aTrigger = {}
-	aBag = makeAppearanceMap(aPowerWords, 30)
-	Debug.console(aBag)
-	-- When the angel is hit with an attack, they release a cloud of spores.
-	-- Each creature within 10 feet of the angel must succeed on a DC 14 Constitution saving throw or be blinded
-    -- until the end of the rot angel's next turn.
-	local aAttacksItOrName = {"attack","attacks","it","him","her","them", unpack(aActorName)}
-	-- Pattern: "When a creature [enemy|attacker] hits it [the monster] with an attack."
-	if hasOneOf(aBag, {"attacker","creature","enemy"}) and 
-		((hasWords(aBag, {"attack"}) and hasOneOf(aBag, {"with","against"})) or hasWords(aBag, {"attacks"})) and
-		hasOneOf(aBag, {"it","him","her","them", unpack(aActorName)}) and
-		appearsBefore(aBag, {"creature"}, aAttacksItOrName) and appearsBefore(aBag, {"enemy"}, aAttacksItOrName) and
-		appearsBefore(aBag, aAttacksItOrName, aOtherOrAlly) -- and appearsBefore(aBag, {"attacker"}, aAttacksItOrName)
-	then
-		Debug.console("---- ACTIVE FORM ----")
-		parseActiveForm(aBag, aTrigger)
-	elseif hasWords(aBag, {"creature","starts","its","turn"}) then
-		aTrigger[STARTS_TURN] = true
-	elseif hasWords(aBag, {"creature","regains","hit","points"}) then
-		aTrigger[HEAL] = true
-	-- Pattern: "When a creature [the monster] is hit by an attack."
-	elseif hasOneOf(aBag, {"when","if"}) and hasOneOf(aBag, aActorName) and
-		appearsBefore(aBag, {"is", "hit", "missed", "targeted", "fails", "reduced", "reduces", "takes","attack"}, aOtherOrAlly)
-	then
-		Debug.console("---- PASSIVE FORM ----")
-		parsePassiveForm(aBag, aTrigger)
-	elseif hasWords(aBag, {"would","hit"}) then
-		aTrigger[IS_HIT] = true
-		parseAttackType(aBag, aTrigger)
-	-- Pattern: "When another creature [that the monster can see] is hit [would be hit] by an attack."
-	elseif hasOneOf(aBag, aOtherOrAlly) and hasNone(aBag, {"enemy"}) and
-		appearsBefore(aBag, aOtherOrAlly, {unpack(aActorName), "is", "hit", "missed", "targeted", "fails", "reduced", "reduces", "takes","attack"})
-	then
-		Debug.console("---- THIRD PARTY ----")
-		aReaction.sTarget = "other"
-		parsePassiveForm(aBag, aTrigger)
-	-- Pattern: "Enemy targets [hits] another creature with an attack."
-	elseif hasWords(aBag, {"enemy"}) and hasOneOf(aBag, aOtherOrAlly) and
-		appearsBefore(aBag, aOtherOrAlly, {"attack"})
-	then
-		Debug.console("---- THIRD PARTY ACTIVE ----")
-		aReaction.sTarget = "other"
-		parseActiveForm(aBag, aTrigger)
+	aBag = makeAppearanceMap(aPowerWords, 35)
+	-- Debug.console(aBag)
+	local l, r, f = findEnemyAttacks(aBag, aActorName)
+	if f then
+		parseAttackRange(aBag, l, r, aTrigger)
+		parseAttackResult(aBag, l, r, aTrigger)
+	end
+	if not f then l, r, f = findMonsterIsAttacked(aBag, aActorName)
+		if f then
+			parseAttackRange(aBag, l, r, aTrigger)
+			parseAttackResult(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
+		if f then
+			aTrigger[DAMAGE] = true
+		end
+	end
+	if not f then l, r, f = findMonsterDamagedByAttack(aBag, aActorName)
+		if f then
+			aTrigger[DAMAGE] = true
+			aTrigger[IS_HIT] = true
+			parseAttackRange(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+		if f then
+			aTrigger[KILLS] = true
+		end
+	end
+	if not f then l, r, f = findMonsterDies(aBag, aActorName)
+		if f then
+			aTrigger[DIES] = true
+		end
+	end
+	if not f then l, r, f = findWouldBeHit(aBag, aActorName)
+		if f then
+			aTrigger[IS_HIT] = true
+			parseAttackRange(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l, r, f = findOtherIsHit(aBag, aActorName)
+		if f then
+			parseAttackRange(aBag, l, r, aTrigger)
+			parseAttackResult(aBag, l, r, aTrigger)
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	if not f then l, r, f = findOtherDamaged(aBag, aActorName)
+		if f then
+			aTrigger[DAMAGE] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	if not f then l, r, f = findOtherDies(aBag, aActorName)
+		if f then
+			aTrigger[DIES] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	if not f then l, r, f = findOtherKills(aBag, aActorName)
+		if f then
+			aTrigger[KILLS] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	if not f then l, r, f = findOtherFailsSave(aBag, aActorName)
+		if f then
+			aTrigger[FAILS_SAVE] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	-- When another creature within 60 feet of the commander who can hear and understand them
+	-- makes a saving throw, the commander can give that creature advantage on the saving throw.
+	if not f then l, r, f = enemyAttacksAllies(aBag, aActorName)
+		if f then
+			parseAttackRange(aBag, l, r, aTrigger)
+			parseAttackResult(aBag, l, r, aTrigger)
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	if not f then l, r, f = selfOrAllyAttacked(aBag, aActorName)
+		if f then
+			aTrigger[IS_HIT] = true; aTrigger[ATK_MELEE] = true; aTrigger[ATK_RANGED] = true;
+			aReaction.isOther = true; aReaction.isSelf = true
+		end
+	end
+	if not f then l, r, f = sequencePos(aBag, {"creature","regains","hit","points"})
+		if f then
+			aTrigger[HEAL] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
 	end
 	if next(aTrigger) ~= nil then
-		if aReaction.sTarget ~= "other" then aReaction.sTarget = "self" end
-		parseVision(aBag, aTrigger)
+		parseVision(aBag, l, r, aTrigger)
 		aReaction.aTrigger = aTrigger
-		if aTrigger[DAMAGE] and hasNone(aBag, {"damaged"}) then aReaction.aDamageType = parseDamageType(aPowerWords) end
+		if aTrigger[DAMAGE] then aReaction.aDamageTypes = parseDamageType(aPowerWords, l, r) end
 	end
 	return aReaction
 end
 
-function parseActiveForm(aBag, aTrigger)
-	if hasOneOf(aBag, {"targets","makes","attacks"}) then
-		aTrigger[IS_MISSED] = true
-		aTrigger[IS_HIT] = true
-	elseif hasWords(aBag, {"hits"}) or hasWords(aBag, {"would","hit"}) then aTrigger[IS_HIT] = true
-	-- the order of this clauses is important because: "if an attack would hit .. AC++ .. if the attack then misses .."
-	elseif hasWords(aBag, {"misses"}) then aTrigger[IS_MISSED] = true end
-	parseAttackType(aBag, aTrigger)
-end
-
-function parsePassiveForm(aBag, aTrigger)
-	if hasWords(aBag, {"is","hit"}) and hasNone(aBag, {"points","point"}) then
-		aTrigger[IS_HIT] = true
-		parseAttackType(aBag, aTrigger)
-	elseif hasWords(aBag, {"is","missed"}) then
-		aTrigger[IS_MISSED] = true
-		parseAttackType(aBag, aTrigger)
-	elseif hasWords(aBag, {"is","targeted"}) then
-		aTrigger[IS_MISSED] = true
-		aTrigger[IS_HIT] = true
-		parseAttackType(aBag, aTrigger)
-	elseif hasWords(aBag, {"fails","saving","throw"}) then aTrigger[FAILS_SAVE] = true
-	elseif hasWords(aBag, {"damaged","by"}) then
-		aTrigger[DAMAGE] = true
-		parseAttackType(aBag, aTrigger)
-	elseif hasWords(aBag, {"reduces"}) then aTrigger[KILLS] = true
-	elseif (hasWords(aBag, {"is","reduced"}) and hasOneOf(aBag, {"0","zero"})) or hasWords(aBag, {"dies"}) then aTrigger[DIES] = true
-	-- the order of these elseif clauses is important because of "when X dies, each creature around takes N damage"
-	elseif hasWords(aBag, {"takes","damage"}) or hasWords(aBag, {"is","subjected","damage"}) then
-		aTrigger[DAMAGE] = true
+local enemy = {"creature", "enemy", "attacker"}
+local hitsOrMisses = {"hits", "misses", "targets"}
+local otherOrAlly = {"another","other","ally","allies"}
+function findEnemyAttacks(aBag, actorName)
+	local monster = {"it","him","her","them", unpack(actorName)}
+	local l, r, f = sequencePos(aBag, {enemy, "within", "feet", monster, hitsOrMisses, "attack"})
+	if not f then 
+		l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"})
 	end
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, "attacks", monster})
+	end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	return 0, 0, false
 end
 
-function parseAttackType(aBag, aTrigger)
-	if hasNone(aBag, {"attack"}) then return end
-	if hasNone(aBag, {"melee","ranged","spell"}) then
+local isHit = {"hit", "missed", "targeted"}
+function findMonsterIsAttacked(aBag, actorName)
+	local monster = {"it","him","her","them", unpack(actorName)}
+	l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
+	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l, r, f end
+	return 0, 0, false
+end
+
+function findMonsterDamagedByAttack(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {"damaged", "by", "attack"})
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	return 0, 0, false
+end
+
+function findMonsterDamaged(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {actorName, "subjected", "to", "damage"})
+	if not f then
+		l, r, f = sequencePos(aBag, {"damaged", "by", "creature", "within", "feet", actorName})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {actorName, "takes", "damage"})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, "deals", "damage", {"it","him","her","them", unpack(actorName)}})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, actorName, "can", "see", "deals", "damage"})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {"after", "taking", "damage", "attack"})
+	end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	return 0, 0, false
+end
+
+function findMonsterDies(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {actorName, "dies"})
+	if not f then
+		l, r, f = sequencePos(aBag, {actorName, "reduced", {"0", "zero"}})
+	end
+	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l, r, f end
+	return 0, 0, false
+end
+
+function findMonsterKills(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {actorName, "kills"})
+	if not f then
+		l, r, f = sequencePos(aBag, {actorName, "reduces", {"0", "zero"}})
+	end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	return 0, 0, false
+end
+
+function findMonsterFailsSave(aBag, actorName)
+	return sequencePos(aBag, {actorName, "fails", "saving", "throw"})
+end
+
+function findWouldBeHit(aBag)
+	return sequencePos(aBag, {"against", "attack", "that", "would", "hit"})
+end
+
+-- When another creature the dragon can see within 15 feet is hit by an attack, the dragon deflects the attack, turning the hit into a miss.
+function findOtherIsHit(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"})
+	end
+	return l, r, f
+end
+
+function findOtherDamaged(aBag, actorName)
+	return sequencePos(aBag, {otherOrAlly, "takes", "damage"})
+end
+
+--When a creature who the cackler can see within 30 feet of them dies,
+-- the cackler magically teleports into the space the creature occupied.
+function findOtherDies(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {otherOrAlly, "dies"})
+	if not f then
+		l, r, f = sequencePos(aBag, {otherOrAlly, "reduced", {"0", "zero"}})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {"creature", actorName, "see", "dies"})
+	end
+	return l, r, f
+end
+
+function findOtherKills(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {otherOrAlly, "kills"})
+	if not f then
+		l, r, f = sequencePos(aBag, {otherOrAlly, "reduces", {"0", "zero"}})
+	end
+	return l, r, f
+end
+
+function findOtherFailsSave(aBag, actorName)
+	return sequencePos(aBag, {otherOrAlly, "fails", "saving", "throw"})
+end
+
+function enemyAttacksAllies(aBag, actorName)
+	return sequencePos(aBag, {enemy, actorName, "see", "attacks", otherOrAlly})
+end
+
+function selfOrAllyAttacked(aBag, actorName)
+	local l, r, f = sequencePos(aBag, {actorName, "creature", "attacked"})
+	if not f then
+		l, r, f = sequencePos(aBag, {"creature", actorName, "attacked"})
+	end
+	return l, r, f
+end
+
+function parseAttackRange(aBag, l, r, aTrigger)
+	if hasNoneWithin(aBag, l, r, {"melee","ranged","spell"}) then
 		aTrigger[ATK_MELEE] = true
 		aTrigger[ATK_RANGED] = true
 		aTrigger[SPELL] = true
 	else
-		if hasWords(aBag, {"melee"}) then aTrigger[ATK_MELEE] = true end
-		if hasWords(aBag, {"ranged"}) then aTrigger[ATK_RANGED] = true end
-		if hasWords(aBag, {"spell"}) then aTrigger[SPELL] = true end
+		if hasWordsWithin(aBag, l, r, {"melee"}) then aTrigger[ATK_MELEE] = true end
+		if hasWordsWithin(aBag, l, r, {"ranged"}) then aTrigger[ATK_RANGED] = true end
+		if hasWordsWithin(aBag, l, r, {"spell"}) then aTrigger[SPELL] = true end
 	end
 end
 
-function parseVision(aBag, aTrigger)
-	if hasWords(aBag, {"can","see"}) or hasWords(aBag, {"able","to","see"}) then aTrigger[VISION] = true end
+function parseAttackResult(aBag, l, r, aTrigger)
+	if hasNoneWithin(aBag, l, r, {"hits","hit","misses","miss"}) then
+		aTrigger[IS_MISSED] = true
+		aTrigger[IS_HIT] = true
+	else
+		if hasOneOfWithin(aBag, l, r, {"hits","hit"}) then aTrigger[IS_HIT] = true end
+		if hasOneOfWithin(aBag, l, r, {"misses","miss"}) then aTrigger[IS_MISSED] = true end
+	end
 end
 
-function parseDamageType(aPowerWords)
+function parseVision(aBag, l, r, aTrigger)
+	if hasWordsWithin(aBag, l, r, {"can","see"}) or hasWordsWithin(aBag, l, r, {"able","to","see"}) then aTrigger[VISION] = true end
+end
+
+function parseDamageType(aPowerWords, l, r)
 	aDamageTypes = {}
-	i = 1
-	while i <= #aPowerWords and not StringManager.isWord(aPowerWords[i], "damage") do i = i + 1	end
-	if i >= #aPowerWords then return aDamageTypes end
-	while i > 1 and not StringManager.isWord(aPowerWords[i], {"takes", "subjected"}) do if StringManager.isWord(aPowerWords[i], DataCommon.dmgtypes) then table.insert(aDamageTypes, aPowerWords[i]) end
+	i = r
+	while i > l and not StringManager.isWord(aPowerWords[i], {"takes", "subjected"}) do if StringManager.isWord(aPowerWords[i], DataCommon.dmgtypes) then table.insert(aDamageTypes, aPowerWords[i]) end
 		i = i - 1
 	end
 	return aDamageTypes
@@ -345,29 +550,44 @@ function parseTrait(sName, aActorName, aPowerWords)
 	if isStandard(sName, aPowerWords) then
 		return {}
 	end
+	local aReaction = {isSelf=true}
 	local aTrigger = {}
-	aBag = makeAppearanceMap(aPowerWords, 32)
-	Debug.console(aBag)
-	if hasWords(aBag, {"creature","touches","or","hits"}) and hasOneOf(aBag, aActorName) then
-		aTrigger[IS_HIT] = true
-		parseAttackType(aBag, aTrigger)
-	elseif hasOneOf(aBag, {"when","if"}) and hasOneOf(aBag, aActorName) and
-		appearsBefore(aBag, aActorName, {"allies","ally","one","other","another"})
-	then
-		parsePassiveForm(aBag, aTrigger)
+	aBag = makeAppearanceMap(aPowerWords, 35)
+	-- Debug.console(aBag)
+	local l, r, f = findMonsterKills(aBag, aActorName)
+	if f then aTrigger[KILLS] = true end
+	if not f then l, r, f = findMonsterDies(aBag, aActorName)
+		if f then aTrigger[DIES] = true end
 	end
-	local aReaction = {}
+	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits", "attack"})
+		if f then
+			aTrigger[IS_HIT] = true
+			parseAttackRange(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l, r, f = findMonsterFailsSave(aBag, aActorName)
+		if f then aTrigger[FAILS_SAVE] = true end
+	end
+	if not f then l, r, f = sequencePos(aBag, {"creature","starts","its","turn"})
+		if f then
+			aTrigger[STARTS_TURN] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	-- Order is important since: "a creature that touches ... takes damage" or "when fails a save .. takes damage"
+	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
+		if f then aTrigger[DAMAGE] = true end
+	end
 	if next(aTrigger) ~= nil then
-		aReaction.sTarget = "self"
 		aReaction.aTrigger = aTrigger
-		if aTrigger[DAMAGE] and hasNone(aBag, {"damaged"}) then aReaction.aDamageType = parseDamageType(aPowerWords) end
+		if aTrigger[DAMAGE] then aReaction.aDamageTypes = parseDamageType(aPowerWords, l, r) end
 	end
 	return aReaction
 end
 
 local standardTraits = {avoidance=true,evasion=true,["magic resistance"]=true,["gnome cunning"]=true,["magic weapons"]=true,
 	["hellish weapons"]=true,["angelic weapons"]=true,["improved critical"]=true,["superior critical"]=true,regeneration=true,
-	["innate spellcasting"]=true,spellcasting=true,minion=true}
+	["innate spellcasting"]=true,spellcasting=true,minion=true,incorporeal=true}
 
 function isStandard(sName, aPowerWords)
 	if standardTraits[sName] then return true end
@@ -376,40 +596,42 @@ function isStandard(sName, aPowerWords)
 	end
 end
 
-function makeAppearanceMap(aPowerWords, nLimit)
+function makeAppearanceMap(aPowerWords, nLim)
 	result = {}
 	for i, w in ipairs(aPowerWords) do
-		if i > nLimit then return result end
 		--uncomment to remove "'s" like in "balor's"
 		--if #w > 2 and w:sub(#w-1, #w-1) == "'" then w = w:sub(0, -2) end
 		if result[w] == nil then result[w] = i end
+		if nLim ~= nil and i > nLim then return result end
 	end
 	return result
 end
 
-function hasWords(aBag, aWords)
+function hasWordsWithin(aBag, l, r, aWords)
 	for _, w in ipairs(aWords) do
-		if aBag[w] == nil then return false end
+		if aBag[w] == nil or aBag[w] < l or aBag[w] > r then return false end
 	end
 	return true
 end
 
-function hasOneOf(aBag, aWords)
+function hasOneOfWithin(aBag, l, r, aWords)
 	for _, w in ipairs(aWords) do
-		if aBag[w] ~= nil then return true end
+		if aBag[w] ~= nil and aBag[w] > l and aBag[w] < r then return true end
 	end
 	return false
 end
 
-function hasNone(aBag, aWords)
+function hasNoneWithin(aBag, l, r, aWords)
+	-- Debug.console(aWords)
+	-- Debug.console("%d %d", l, r)
 	for _, w in ipairs(aWords) do
-		if aBag[w] ~= nil then return false end
+		if aBag[w] ~= nil and aBag[w] > l and aBag[w] < r then return false end
 	end
 	return true
 end
 
--- Check that every word in aLeft appears earlier than every word in aRight
--- Returns true if none of the words from one of the arguments are present
+-- Check that every word in aLeft appears earlier than every word in aRight.
+-- Returns true if none of the words from one of the arguments are present.
 function appearsBefore(aBag, aLeft, aRight)
 	maxLeft = 0
 	for i = 0, #aLeft, 1 do
@@ -419,21 +641,34 @@ function appearsBefore(aBag, aLeft, aRight)
 	for i = 0, #aRight, 1 do
 		if aBag[aRight[i]] ~= nil then minRight = math.min(minRight, aBag[aRight[i]]) end
 	end
-	Debug.console(string.format("left: %d; right %d;", maxLeft, minRight))
 	return maxLeft < minRight
 end
 
--- function findSequence(aPowerWords, aSequence)
--- 	local i = 1
--- 	local j = 1
--- 	while i <= #aPowerWords do
--- 		while aPowerWords[i] ~= aSequence[j] and i <= #aPowerWords do
--- 			i = i + 1
--- 		end
--- 		j = j + 1
--- 		if j > #aSequence then
--- 			return i
--- 		end
--- 	end
--- 	return nil
--- end
+-- If the sequence not found, returns zero, otherwise returns index of the last element.
+-- Next word in the sequence must appear after the previous one.
+-- aSeq is in form: {"str", {"opt_1", "opt_2", "opt_n"}, "other_str"}.
+-- Any optional strings found in aBag will satisfy the check.
+function sequencePos(aBag, aSeq)
+	local nFirst = 0
+	local nLast = 0
+	-- Debug.console("--------------------")
+	-- Debug.console(aSeq)
+	for i = 1, #aSeq, 1 do
+		if type(aSeq[i]) == "table" then
+			local subseq = aSeq[i]
+			local subseqPos = 999
+			for j = 1, #subseq, 1 do
+				local nPos = aBag[subseq[j]]
+				if nPos ~= nil and nPos < subseqPos then subseqPos = nPos end
+			end
+			if subseqPos == nil or subseqPos == 999 or subseqPos < nLast then return 0, 0, false end
+			nLast = subseqPos
+		else
+			local nPos = aBag[aSeq[i]]
+			if nPos == nil or nPos < nLast then return 0, 0, false end
+			nLast = nPos
+		end
+		if i == 1 then nFirst = nLast end
+	end
+	return nFirst, nLast, true
+end
