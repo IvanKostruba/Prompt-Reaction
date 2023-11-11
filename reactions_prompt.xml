@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+	Fantasy Grounds is copyright SmiteWorks USA LLC, 2004-2023. All Rights Reserved.
+	
+	No core Fantasy Grounds files have been modified to create this extension.
+	If you want to incorporate this into one of your own extensions, have at it, but just credit me.
+
+	Credit for the icon goes to flaticon.com who generously allow free use with attribution:
+	<a href="https://www.flaticon.com/free-icons/return" title="return icons">Return icons created by Kiranshastry - Flaticon</a>
+-->
+
+<root>
+	<!-- OPTIONS -->
+	<string name="option_header_REPRO">Prompt Reaction Options</string>
+	<string name="option_label_REPRO_chat_output">Select message format</string>
+	<string name="option_label_REPRO_report_parsing">Report parsing results</string>
+	<string name="option_label_REPRO_message_recipients">Notification recipients</string>
+
+	<!-- VALUES -->
+	<string name="option_val_power_link">Reaction link</string>
+	<string name="option_val_npc_link">NPC link</string>
+	<string name="option_val_power_desc">Reaction text</string>
+	<string name="option_val_only_gm">GM only</string>
+	<string name="option_val_everyone">everyone</string>
+</root>
