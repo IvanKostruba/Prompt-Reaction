@@ -5,6 +5,8 @@ function registerOptions()
 		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
 	OptionsManager.registerOption2("REPRO_RECIPIENT", false, "option_header_REPRO", "option_label_REPRO_message_recipients", "option_entry_cycler",
 		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" });
+	OptionsManager.registerOption2("REPRO_EFFECT_WARN", false, "option_header_REPRO", "option_label_REPRO_effect_warning", "option_entry_cycler",
+		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
 end
 
 function onInit()
@@ -18,6 +20,11 @@ function onInit()
 
 	ActionDamage.applyDamageReProOrig = ActionDamage.applyDamage
 	ActionDamage.applyDamage = applyDamageDecorator;
+
+	ActionSave.applySaveReProOrig = ActionSave.applySave
+	ActionSave.applySave = applySaveDecorator
+
+	CombatManager.setCustomTurnStart(onTurnStart) -- adds a listener, no need for a decorator
 end
 
 local isCTScanDone = false
@@ -53,35 +60,32 @@ function scanActor(ctNode)
 	if rActor.sType ~= "npc" then return end
 	aParsedName = parseName(rActor.sName)
 	reactorID = extractID(rActor)
-	for _,v in ipairs(DB.getChildList(ctNode, "reactions")) do
+	processNodeData(ctNode, "reactions", parseReaction, aParsedName, reactorID)
+	processNodeData(ctNode, "traits", parseTrait, aParsedName, reactorID)
+	DB.addHandler(ctNode, "onDelete", onCombatantDelete);
+end
+
+function processNodeData(ctNode, sRecordType, fParser, aParsedName, reactorID)
+	for _,v in ipairs(DB.getChildList(ctNode, sRecordType)) do
 		local sName = StringManager.trim(DB.getValue(v, "name", ""));
 		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""));
-		r = parseReaction(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
-		-- Debug.console(r)
+		r = fParser(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
 		if r.aTrigger ~= nil and next(r.aTrigger) ~= nil then
 			r.vDBRecord = v
-			if r.isSelf then
-				addReaction(ReactionOnSelf, reactorID, r)
-				sendParsingMessage(sName, r, false)
-			end
-			if r.isOther then
-				addReaction(ReactionOnOther, reactorID, r)
-				sendParsingMessage(sName, r, true)
-			end
+			insertReaction(sName, reactorID, r)
 		end
 	end
-	for _,v in ipairs(DB.getChildList(ctNode, "traits")) do
-		local sName = StringManager.trim(DB.getValue(v, "name", ""));
-		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""));
-		tr = parseTrait(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
-		if tr.aTrigger ~= nil and next(tr.aTrigger) ~= nil then
-			tr.vDBRecord = v
-			addReaction(ReactionOnSelf, reactorID, tr)
-			sendParsingMessage(sName, tr, false)
-		end
-		-- Debug.console(tr)
+end
+
+function insertReaction(sName, id, r)
+	if r.isSelf then
+		addReaction(ReactionOnSelf, id, r)
+		sendParsingMessage(sName, r, false)
 	end
-	DB.addHandler(ctNode, "onDelete", onCombatantDelete);
+	if r.isOther then
+		addReaction(ReactionOnOther, id, r)
+		sendParsingMessage(sName, r, true)
+	end
 end
 
 function extractID(rActor)
@@ -119,63 +123,76 @@ local SPELL = "SPELL"
 local DAMAGE = "DAMAGE"
 local DIES = "DIES"
 local KILLS = "KILLS"
-local MAKES_SAVE = "RSAVE"
-local SUCCEEDS_SAVE = "SAVES"
+local ROLL_SAVE = "RSAVE"
 local FAILS_SAVE = "SAVEF"
 local STARTS_TURN = "TURN"
 local CRIT = "CRIT"
 local HEAL = "HEAL"
 
-function matchReaction(aAction, aReaction, rTarget)
-	-- TODO: maybe match: atk: range + result + damage ? Implication is what if the type is not known.
-	Debug.console("REACTION: ", aReaction)
+-- rOrigTarget always come from the roll
+-- rTarget is resolved from the combatant ID when evaluating reactions on others
+function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
+	if aReaction.isOther and not aReaction.isSelf then
+		if rTarget.sCTNode == rOrigTarget.sCTNode then return false end
+	end
 	if next(aAction.aFlags) == nil then return false end
 	for f, _ in pairs(aAction.aFlags) do
 		if aReaction.aTrigger[f] == nil then return false end
 	end
 	if aAction.aFlags[DAMAGE] then
 		if next(aReaction.aDamageTypes) ~= nil then
-			foundDamageType = false
+			local foundDamageType = false
 			for _, t in ipairs(aAction.aDamageTypes) do
 				for _, rt in ipairs(aReaction.aDamageTypes) do if t == rt then foundDamageType = true end end
 			end
-			Debug.console("DMG TYPES ", aReaction.aDamageType, aAction.aDamageTypes, foundDamageType)
 			if not foundDamageType then return false end
 		end
 	end
+	local eff = {}
 	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget);
-	if DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
+	if aReaction.isPassive == nil and DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
+		eff.hasReacted = true
+		sendWarningMessage(rTarget, eff)
 		return false
 	end
-	-- TODO: add passive reactions that work independently of condition.
-	if not aAction.aFlags[DIES] and (EffectManager5E.hasEffectCondition(rTarget, "Unconscious") or
-		EffectManager5E.hasEffectCondition(rTarget, "Stunned") or
-		EffectManager5E.hasEffectCondition(rTarget, "Paralyzed") or
-		EffectManager5E.hasEffectCondition(rTarget, "Incapacitated") or
-		EffectManager5E.hasEffectCondition(rTarget, "Petrified"))
+	eff.isUnconscious = EffectManager5E.hasEffectCondition(rTarget, "Unconscious")
+	if eff.isUnconscious then
+		if aAction.aFlags[DIES] ~= nil and rTarget.sCTNode == rOrigTarget.sCTNode
+		then
+			eff.isUnconscious = nil -- Unconscious in practice often means dead, but creature can react to it's demise.
+		end
+	end
+	eff.isStunned = EffectManager5E.hasEffectCondition(rTarget, "Stunned")
+	eff.isParalyzed = EffectManager5E.hasEffectCondition(rTarget, "Paralyzed")
+	eff.isIncapacitated = EffectManager5E.hasEffectCondition(rTarget, "Incapacitated")
+	eff.isPetrified = EffectManager5E.hasEffectCondition(rTarget, "Petrified")
+	if aReaction.isUnconditional == nil and
+		(eff.isUnconscious or eff.isStunned or eff.isParalyzed or eff.isIncapacitated or eff.isPetrified)
 	then
+		sendWarningMessage(rTarget, eff)
 		return false
 	end
-	if aReaction.aTrigger[VISION] and EffectManager5E.hasEffectCondition(rTarget, "Blinded") then
+	eff.isInvisible = EffectManager5E.hasEffectCondition(rSource, "Invisible")
+	eff.isBlinded = EffectManager5E.hasEffectCondition(rTarget, "Blinded")
+	if aReaction.aTrigger[VISION] and (eff.isBlinded or eff.isInvisible) then
+		sendWarningMessage(rTarget, eff)
 		return false
 	end
 	return true
 end
 
-function matchAllReactions(aAction, rTarget)
-	Debug.console(" FLAGS: ", aAction)
+function matchAllReactions(aAction, rTarget, rSource)
 	reactorID = extractID(rTarget)
 	if ReactionOnSelf[reactorID] ~= nil then
 		for _, rs in ipairs(ReactionOnSelf[reactorID]) do
-			if matchReaction(aAction, rs, rTarget) then sendChatMessage(rTarget, rs) end
+			if triggerReaction(aAction, rs, rTarget, rTarget, rSource) then sendChatMessage(rTarget, rs) end
 		end
 	end
-	-- TODO: reaction on others not necessarily work on self. Currently triggered.
 	for id, reactionsList in pairs(ReactionOnOther) do
 		local sReactorCTNode = string.format("combattracker.list.id-%s", id)
 		local rActor = ActorManager.resolveActor(sReactorCTNode)
 		for _, ro in ipairs(reactionsList) do
-			if matchReaction(aAction, ro, rActor) then sendChatMessage(rActor, ro, rActor) end
+			if triggerReaction(aAction, ro, rActor, rTarget, rSource) then sendChatMessage(rActor, ro, rActor) end
 		end
 	end
 end
@@ -191,7 +208,7 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 	else aAction.aFlags[IS_MISSED] = true end
 	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
 	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
-	matchAllReactions(aAction, rTarget)
+	matchAllReactions(aAction, rTarget, rSource)
 end
 
 function applyDamageDecorator(rSource, rTarget, rRoll)
@@ -205,8 +222,8 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 		-- Assume that sType == "charsheet" means it's a "PC". Temporary HP, recovery etc. skipped.
 		return
 	end
-	Debug.console("applyDamage", rTarget, rRoll, rDamageOutput)
-	-- if rDamageOutput.nTotal == 0 then return end -- some reactions work when "subjected to damage"
+	-- if rDamageOutput.nTotal == 0 then return end -- some reactions work when "subjected to damage" even if it's 0
+	-- rRoll.sResults "[RESISTED]" "[EVADED]"
 	local f = {}
 	if rDamageOutput.sType == "damage" then
 		dmgTypes = {}
@@ -215,15 +232,33 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 			if v ~= 0 then table.insert(dmgTypes, k) end
 		end
 	elseif rDamageOutput.sType == "heal" then f[HEAL] = true end
-	matchAllReactions({aFlags=f, aDamageTypes=dmgTypes}, rTarget)
+	matchAllReactions({aFlags=f, aDamageTypes=dmgTypes}, rTarget, rSource)
 	local targetStatus = ActorHealthManager.getHealthStatus(rTarget);
 	if ActorHealthManager.isDyingOrDeadStatus(targetStatus) then
-		matchAllReactions({aFlags={[DIES]=true}}, rTarget)
-		matchAllReactions({aFlags={[KILLS]=true}}, rSource)
+		matchAllReactions({aFlags={[DIES]=true}}, rTarget, rSource)
+		matchAllReactions({aFlags={[KILLS]=true}}, rSource, rSource)
 	end
-	-- rDamageOutput.sRange == '' -- for spell;  aDamageFilter={"melee"|"ranged"}
-	-- rRoll.sResults "[RESISTED]" "[EVADED]"
-	-- rRoll.sDesc
+end
+
+function applySaveDecorator(rSource, rOrigin, rAction, sUser)
+	-- call the original applySave method
+	ActionSave.applySaveReProOrig(rSource, rOrigin, rAction, sUser)
+
+	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
+	ctListScan(rSource)
+	-- ROLL_SAVE can be added here
+	if rAction.nTarget > 0 then
+		if rAction.nTotal < rAction.nTarget then
+			matchAllReactions({aFlags={[FAILS_SAVE]=true}}, rSource, rOrigin)
+		end
+	end
+end
+
+function onTurnStart(nodeEntry)
+	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
+	ctListScan(nodeEntry)
+	local rActor = ActorManager.resolveActor(nodeEntry);
+	matchAllReactions({aFlags={[STARTS_TURN]=true}}, rActor, rActor)
 end
 
 function sendChatMessage(rTarget, aReaction)
@@ -275,12 +310,29 @@ function sendParsingMessage(sName, aReaction, isOther)
 	Comm.deliverChatMessage(msg);
 end
 
+function sendWarningMessage(rTarget, eff)
+	if OptionsManager.getOption("REPRO_EFFECT_WARN") == "off" then return end
+	local msg = ChatManager.createBaseMessage(rTarget);
+	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
+	msg.icon = "react_prompt"
+	msg.text = "reaction impossible: creature"
+	if eff.hasReacted then msg.text = msg.text .. " already reacted"
+	else
+		if eff.isUnconscious then msg.text = msg.text .. " is unconscious;" end
+		if eff.isStunned then msg.text = msg.text .. " is stunned;" end
+		if eff.isParalyzed then msg.text = msg.text .. " is paralyzed;" end
+		if eff.isIncapacitated then msg.text = msg.text .. " is incapacitated;" end
+		if eff.isPetrified then msg.text = msg.text .. " is petrified;" end
+		if eff.isBlinded then msg.text = msg.text .. " must see the target but is blinded" end
+		if eff.isInvisible then msg.text = msg.text .. " must see the target but it's invisible" end
+	end
+	Comm.deliverChatMessage(msg);
+end
+
 function parseReaction(sName, aActorName, aPowerWords)
-	Debug.console("Reaction ", sName, aActorName);
 	local aReaction = {isSelf=true}
 	local aTrigger = {}
 	aBag = makeAppearanceMap(aPowerWords, 35)
-	-- Debug.console(aBag)
 	local l, r, f = findEnemyAttacks(aBag, aActorName)
 	if f then
 		parseAttackRange(aBag, l, r, aTrigger)
@@ -372,12 +424,67 @@ function parseReaction(sName, aActorName, aPowerWords)
 			aReaction.isOther = true; aReaction.isSelf = false
 		end
 	end
+	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
+	aReaction.aTrigger = aTrigger
+	return aReaction
+end
+
+function parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
 	if next(aTrigger) ~= nil then
 		parseVision(aBag, l, r, aTrigger)
-		aReaction.aTrigger = aTrigger
 		if aTrigger[DAMAGE] then aReaction.aDamageTypes = parseDamageType(aPowerWords, l, r) end
 	end
+end
+
+function parseTrait(sName, aActorName, aPowerWords)
+	if isStandard(sName, aPowerWords) then
+		return {}
+	end
+	local aReaction = {isSelf=true, isPassive=true, isUnconditional=true}
+	local aTrigger = {}
+	aBag = makeAppearanceMap(aPowerWords, 40)
+	local l, r, f = findMonsterKills(aBag, aActorName)
+	if f then aTrigger[KILLS] = true end
+	if not f then l, r, f = findMonsterDies(aBag, aActorName)
+		local _, _, isCondition = findNotIncapacitated(aBag)
+		if isCondition then aReaction.isUnconditional = nil end
+		if f then aTrigger[DIES] = true end
+	end
+	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits", "attack"})
+		if f then
+			aTrigger[IS_HIT] = true
+			parseAttackRange(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l, r, f = findMonsterFailsSave(aBag, aActorName)
+		if f then aTrigger[FAILS_SAVE] = true end
+	end
+	if not f then l, r, f = sequencePos(aBag, {"creature","starts","its","turn"})
+		if f then
+			local _, _, isCondition = findNotIncapacitated(aBag)
+			if isCondition then aReaction.isUnconditional = nil end
+			aTrigger[STARTS_TURN] = true
+			aReaction.isOther = true; aReaction.isSelf = false
+		end
+	end
+	-- Order is important since: "a creature that touches ... takes damage" or "when fails a save .. takes damage"
+	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
+		if f then aTrigger[DAMAGE] = true end
+	end
+	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
+	aReaction.aTrigger = aTrigger
 	return aReaction
+end
+
+local standardTraits = {avoidance=true,evasion=true,["magic resistance"]=true,["gnome cunning"]=true,["magic weapons"]=true,
+	["hellish weapons"]=true,["angelic weapons"]=true,["improved critical"]=true,["superior critical"]=true,regeneration=true,
+	["innate spellcasting"]=true,spellcasting=true,minion=true,incorporeal=true,["sunlight hypersensitivity"]=true}
+
+function isStandard(sName, aPowerWords)
+	if standardTraits[sName] then return true end
+	if string.find(sName, "charge") or string.find(sName, "pounce") then
+		return true
+	end
 end
 
 local enemy = {"creature", "enemy", "attacker"}
@@ -510,6 +617,10 @@ function selfOrAllyAttacked(aBag, actorName)
 	return l, r, f
 end
 
+function findNotIncapacitated(aBag)
+	return sequencePos(aBag, {{"isn't", "aren't", "weren't", "wasn't", "not"}, "incapacitated"})
+end
+
 function parseAttackRange(aBag, l, r, aTrigger)
 	if hasNoneWithin(aBag, l, r, {"melee","ranged","spell"}) then
 		aTrigger[ATK_MELEE] = true
@@ -545,57 +656,6 @@ function parseDamageType(aPowerWords, l, r)
 	return aDamageTypes
 end
 
-function parseTrait(sName, aActorName, aPowerWords)
-	Debug.console("Trait " .. sName);
-	if isStandard(sName, aPowerWords) then
-		return {}
-	end
-	local aReaction = {isSelf=true}
-	local aTrigger = {}
-	aBag = makeAppearanceMap(aPowerWords, 35)
-	-- Debug.console(aBag)
-	local l, r, f = findMonsterKills(aBag, aActorName)
-	if f then aTrigger[KILLS] = true end
-	if not f then l, r, f = findMonsterDies(aBag, aActorName)
-		if f then aTrigger[DIES] = true end
-	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits", "attack"})
-		if f then
-			aTrigger[IS_HIT] = true
-			parseAttackRange(aBag, l, r, aTrigger)
-		end
-	end
-	if not f then l, r, f = findMonsterFailsSave(aBag, aActorName)
-		if f then aTrigger[FAILS_SAVE] = true end
-	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","starts","its","turn"})
-		if f then
-			aTrigger[STARTS_TURN] = true
-			aReaction.isOther = true; aReaction.isSelf = false
-		end
-	end
-	-- Order is important since: "a creature that touches ... takes damage" or "when fails a save .. takes damage"
-	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
-		if f then aTrigger[DAMAGE] = true end
-	end
-	if next(aTrigger) ~= nil then
-		aReaction.aTrigger = aTrigger
-		if aTrigger[DAMAGE] then aReaction.aDamageTypes = parseDamageType(aPowerWords, l, r) end
-	end
-	return aReaction
-end
-
-local standardTraits = {avoidance=true,evasion=true,["magic resistance"]=true,["gnome cunning"]=true,["magic weapons"]=true,
-	["hellish weapons"]=true,["angelic weapons"]=true,["improved critical"]=true,["superior critical"]=true,regeneration=true,
-	["innate spellcasting"]=true,spellcasting=true,minion=true,incorporeal=true}
-
-function isStandard(sName, aPowerWords)
-	if standardTraits[sName] then return true end
-	if string.find(sName, "charge") or string.find(sName, "pounce") then
-		return true
-	end
-end
-
 function makeAppearanceMap(aPowerWords, nLim)
 	result = {}
 	for i, w in ipairs(aPowerWords) do
@@ -622,8 +682,6 @@ function hasOneOfWithin(aBag, l, r, aWords)
 end
 
 function hasNoneWithin(aBag, l, r, aWords)
-	-- Debug.console(aWords)
-	-- Debug.console("%d %d", l, r)
 	for _, w in ipairs(aWords) do
 		if aBag[w] ~= nil and aBag[w] > l and aBag[w] < r then return false end
 	end
@@ -651,8 +709,6 @@ end
 function sequencePos(aBag, aSeq)
 	local nFirst = 0
 	local nLast = 0
-	-- Debug.console("--------------------")
-	-- Debug.console(aSeq)
 	for i = 1, #aSeq, 1 do
 		if type(aSeq[i]) == "table" then
 			local subseq = aSeq[i]
