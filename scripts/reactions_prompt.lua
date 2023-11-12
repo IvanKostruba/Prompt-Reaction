@@ -132,9 +132,6 @@ local HEAL = "HEAL"
 -- rOrigTarget always come from the roll
 -- rTarget is resolved from the combatant ID when evaluating reactions on others
 function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
-	if aReaction.isOther and not aReaction.isSelf then
-		if rTarget.sCTNode == rOrigTarget.sCTNode then return false end
-	end
 	if next(aAction.aFlags) == nil then return false end
 	for f, _ in pairs(aAction.aFlags) do
 		if aReaction.aTrigger[f] == nil then return false end
@@ -191,8 +188,10 @@ function matchAllReactions(aAction, rTarget, rSource)
 	for id, reactionsList in pairs(ReactionOnOther) do
 		local sReactorCTNode = string.format("combattracker.list.id-%s", id)
 		local rActor = ActorManager.resolveActor(sReactorCTNode)
-		for _, ro in ipairs(reactionsList) do
-			if triggerReaction(aAction, ro, rActor, rTarget, rSource) then sendChatMessage(rActor, ro, rActor) end
+		if rActor.sCTNode ~= rTarget.sCTNode then
+			for _, ro in ipairs(reactionsList) do
+				if triggerReaction(aAction, ro, rActor, rTarget, rSource) then sendChatMessage(rActor, ro, rActor) end
+			end
 		end
 	end
 end
@@ -346,7 +345,10 @@ function parseReaction(sName, aActorName, aPowerWords)
 	end
 	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
 		if f then
+			_, _, orCreature = sequencePos(aBag, {aActorName, "or", "creature"})
+			if not orCreature then  _, _, orCreature = sequencePos(aBag, {"creature", "or", aActorName}) end
 			aTrigger[DAMAGE] = true
+			if orCreature then aReaction.isOther = true end;
 		end
 	end
 	if not f then l, r, f = findMonsterDamagedByAttack(aBag, aActorName)
@@ -502,6 +504,9 @@ function findEnemyAttacks(aBag, actorName)
 	if not f then
 		l, r, f = sequencePos(aBag, {enemy, "attacks", monster})
 	end
+	if not f then
+		l, r, f = sequencePos(aBag, {enemy, "makes", "attack", "against", monster})
+	end
 	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
 	return 0, 0, false
 end
@@ -544,7 +549,10 @@ end
 function findMonsterDies(aBag, actorName)
 	local l, r, f = sequencePos(aBag, {actorName, "dies"})
 	if not f then
-		l, r, f = sequencePos(aBag, {actorName, "reduced", {"0", "zero"}})
+		l, r, f = sequencePos(aBag, {actorName, {"reduced", "drops"}, {"0", "zero"}})
+	end
+	if not f then
+		l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", actorName})
 	end
 	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l, r, f end
 	return 0, 0, false
@@ -585,7 +593,7 @@ end
 function findOtherDies(aBag, actorName)
 	local l, r, f = sequencePos(aBag, {otherOrAlly, "dies"})
 	if not f then
-		l, r, f = sequencePos(aBag, {otherOrAlly, "reduced", {"0", "zero"}})
+		l, r, f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}})
 	end
 	if not f then
 		l, r, f = sequencePos(aBag, {"creature", actorName, "see", "dies"})
