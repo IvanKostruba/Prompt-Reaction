@@ -24,9 +24,12 @@ The extension currently cannot process:
 
 **Notification recipients**: (everyone | GM only) When GM only is selected, players will not see the reaction prompts or warnings when a condition prevents a monster from reacting.
 
+
 **Report parsing results**: (on | off) When turned on, the extension will output to the chat the reactions it detects for the NPC when it is added to CT and corresponding trigger conditions. These messages are always visible only to the GM.
 
+
 **Select message format**: (Reaction link | NPC link | Reaction text | off) When turned off, no prompts will be sent. Other options are self-explanatory.
+
 
 **Warn if an effect prevents reaction**: (on | off) When turned on, messages will be sent to the chat if a reaction could be triggered, but an incapacitated condition prevents the monster from reacting, of when the monster must see its target, but the target is invisible or the monster is blinded, or if the monster already spend its reaction (“reaction” checkbox is ticked on the monster record in the CT).
 
