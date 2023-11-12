@@ -15,6 +15,7 @@
 	<string name="option_label_REPRO_chat_output">Select message format</string>
 	<string name="option_label_REPRO_report_parsing">Report parsing results</string>
 	<string name="option_label_REPRO_message_recipients">Notification recipients</string>
+	<string name="option_label_REPRO_effect_warning">Warn if an effect prevents reaction</string>
 
 	<!-- VALUES -->
 	<string name="option_val_power_link">Reaction link</string>
