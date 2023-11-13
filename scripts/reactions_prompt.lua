@@ -15,6 +15,10 @@ function onInit()
 	onNPCPostAddReProOrig = CombatRecordManager.getRecordTypePostAddCallback("npc")
 	CombatRecordManager.setRecordTypePostAddCallback("npc", postNPCAddDecorator);
 
+	ActionHeal.onHealReProOrig = ActionHeal.onHeal
+	ActionHeal.onHeal = onHealDecorator
+	ActionsManager.registerResultHandler("heal", ActionHeal.onHeal);
+
 	ActionAttack.applyAttackReProOrig = ActionAttack.applyAttack
 	ActionAttack.applyAttack = applyAttackDecorator
 
@@ -38,7 +42,7 @@ end
 
 function ctListScan(ctNode)
 	if isCTScanDone then return false end
-	if type(ctNode) ~= "databasenode" then _, ctNode = ActorManager.getTypeAndNode(ctNode); end
+	if type(ctNode) ~= "databasenode" then ctNode = DB.findNode(ctNode.sCTNode); end
 	for _,v in pairs(DB.getChildren(DB.getParent(ctNode))) do
 		scanActor(v)
 	end
@@ -128,6 +132,7 @@ local FAILS_SAVE = "SAVEF"
 local STARTS_TURN = "TURN"
 local CRIT = "CRIT"
 local HEAL = "HEAL"
+local ATK_FAIL = "ATK_FAIL"
 
 -- rOrigTarget always come from the roll
 -- rTarget is resolved from the combatant ID when evaluating reactions on others
@@ -207,7 +212,9 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 	else aAction.aFlags[IS_MISSED] = true end
 	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
 	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
-	matchAllReactions(aAction, rTarget, rSource)
+	matchAllReactions(aAction, rTarget, rSource) 
+	if aAction.aFlags[IS_MISSED] then matchAllReactions({aFlags={[ATK_FAIL]=true}}, rSource, rTarget) end
+	if rRoll.sResult == "crit" then matchAllReactions({aFlags={[CRIT]=true}}, rTarget, rSource) end
 end
 
 function applyDamageDecorator(rSource, rTarget, rRoll)
@@ -253,10 +260,19 @@ function applySaveDecorator(rSource, rOrigin, rAction, sUser)
 	end
 end
 
+function onHealDecorator(rSource, rTarget, rRoll)
+	-- call the original method
+	ActionHeal.onHealReProOrig(rSource, rTarget, rRoll)
+
+	ctListScan(rSource)
+	matchAllReactions({aFlags={[HEAL]=true}}, rTarget, rSource)
+end
+
 function onTurnStart(nodeEntry)
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
 	ctListScan(nodeEntry)
 	local rActor = ActorManager.resolveActor(nodeEntry);
+	if rActor.sType == "npc" then return end -- only PCs will trigger start turn reations
 	matchAllReactions({aFlags={[STARTS_TURN]=true}}, rActor, rActor)
 end
 
@@ -284,28 +300,31 @@ function sendParsingMessage(sName, aReaction, isOther)
 	local msg = ChatManager.createBaseMessage();
 	msg.secret = true
 	msg.icon = "react_prompt"
-	msg.text = string.format("[%s] trigger:", sName)
-	if isOther then msg.text = msg.text .. " another creature" end
+	t = string.format("[%s] trigger:", sName)
+	if isOther then t = t .. " another creature" end
 	sAttackRange = "an"
 	local tr = aReaction.aTrigger
 	if tr[ATK_MELEE] and tr[ATK_RANGED] then sAttackRange = "a melee or ranged"
 	elseif tr[ATK_MELEE] then sAttackRange = "a melee"
 	elseif tr[ATK_RANGED] then sAttackRange = "a ranged" end
-	if tr[IS_HIT] and tr[IS_MISSED] then msg.text = string.format("%s is hit or missed by %s attack;", msg.text, sAttackRange)
-	elseif tr[IS_HIT] then msg.text = string.format("%s is hit by %s attack;", msg.text, sAttackRange)
-	elseif tr[IS_MISSED] then msg.text = string.format("%s missed by %s attack;", msg.text, sAttackRange) end
+	if tr[IS_HIT] and tr[IS_MISSED] then t = string.format("%s is hit or missed by %s attack;", t, sAttackRange)
+	elseif tr[IS_HIT] then t = string.format("%s is hit by %s attack;", t, sAttackRange)
+	elseif tr[IS_MISSED] then t = string.format("%s missed by %s attack;", t, sAttackRange) end
+	if tr[CRIT] then t = t .. " suffers a critical hit;" end
 	if tr[DAMAGE] then
 		local sTypes = "any"
 		if aReaction.aDamageTypes and next(aReaction.aDamageTypes) ~= nil then
 			sTypes = table.concat(aReaction.aDamageTypes, "|")
 		end
-		msg.text = msg.text .. " takes [" .. sTypes .. "] damage;"
+		t = t .. " takes [" .. sTypes .. "] damage;"
 	end
-	if tr[KILLS] then msg.text = msg.text .. " kills target;" end
-	if tr[DIES] then msg.text = msg.text .. " dies;" end
-	if tr[FAILS_SAVE] then msg.text = msg.text .. " fails a save;" end
-	if tr[HEAL] then msg.text = msg.text .. " regains hp;" end
-	if tr[STARTS_TURN] then msg.text = msg.text .. " a creature starts its turn;" end
+	if tr[KILLS] then t = t .. " kills target;" end
+	if tr[DIES] then t = t .. " dies;" end
+	if tr[FAILS_SAVE] then t = t .. " fails a save;" end
+	if tr[HEAL] then t = t .. " regains hp;" end
+	if tr[STARTS_TURN] then t = t .. " a creature starts its turn;" end
+	if tr[ATK_FAIL] then t = t .. " fails attack roll;" end
+	msg.text = t
 	Comm.deliverChatMessage(msg);
 end
 
@@ -343,13 +362,11 @@ function parseReaction(sName, aActorName, aPowerWords)
 			parseAttackResult(aBag, l, r, aTrigger)
 		end
 	end
-	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
-		if f then
-			_, _, orCreature = sequencePos(aBag, {aActorName, "or", "creature"})
-			if not orCreature then  _, _, orCreature = sequencePos(aBag, {"creature", "or", aActorName}) end
-			aTrigger[DAMAGE] = true
-			if orCreature then aReaction.isOther = true end;
-		end
+	if not f then l, r, f = findMonsterTakesCrit(aBag, aActorName)
+		if f then aTrigger[CRIT] = true end
+	end
+	if not f then l, r, f = findMonsterFailsAttack(aBag, aActorName)
+		if f then aTrigger[ATK_FAIL] = true end
 	end
 	if not f then l, r, f = findMonsterDamagedByAttack(aBag, aActorName)
 		if f then
@@ -358,15 +375,19 @@ function parseReaction(sName, aActorName, aPowerWords)
 			parseAttackRange(aBag, l, r, aTrigger)
 		end
 	end
-	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
 		if f then
-			aTrigger[KILLS] = true
+			_, _, orCreature = sequencePos(aBag, {aActorName, "or", "creature"})
+			if not orCreature then  _, _, orCreature = sequencePos(aBag, {"creature", "or", aActorName}) end
+			aTrigger[DAMAGE] = true
+			if orCreature then aReaction.isOther = true end;
 		end
 	end
+	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+		if f then aTrigger[KILLS] = true end
+	end
 	if not f then l, r, f = findMonsterDies(aBag, aActorName)
-		if f then
-			aTrigger[DIES] = true
-		end
+		if f then aTrigger[DIES] = true end
 	end
 	if not f then l, r, f = findWouldBeHit(aBag, aActorName)
 		if f then
@@ -452,7 +473,9 @@ function parseTrait(sName, aActorName, aPowerWords)
 		if isCondition then aReaction.isUnconditional = nil end
 		if f then aTrigger[DIES] = true end
 	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits", "attack"})
+	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits","attack"})
+		if not f then l, r, f = sequencePos(aBag, {"whenever","hits","attack","damage"}) end
+		if not f then l, r, f = sequencePos(aBag, {"whenever","hits","attack"}) end
 		if f then
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
@@ -492,83 +515,77 @@ end
 local enemy = {"creature", "enemy", "attacker"}
 local hitsOrMisses = {"hits", "misses", "targets"}
 local otherOrAlly = {"another","other","ally","allies"}
-function findEnemyAttacks(aBag, actorName)
-	local monster = {"it","him","her","them", unpack(actorName)}
+function findEnemyAttacks(aBag, aName)
+	local monster = {"it","him","her","them", unpack(aName)}
 	local l, r, f = sequencePos(aBag, {enemy, "within", "feet", monster, hitsOrMisses, "attack"})
-	if not f then 
-		l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, "attacks", monster})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, "makes", "attack", "against", monster})
-	end
+	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, "attacks", monster}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, "makes", "attack", "against", monster}) end
 	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
 	return 0, 0, false
 end
 
 local isHit = {"hit", "missed", "targeted"}
-function findMonsterIsAttacked(aBag, actorName)
-	local monster = {"it","him","her","them", unpack(actorName)}
+function findMonsterIsAttacked(aBag, aName)
+	local monster = {"it","him","her","them", unpack(aName)}
 	l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
+	-- "when targeted by an attack, M"
+	if not f then l, r, f = sequencePos(aBag, {{"when", "if"}, isHit, "attack", aName}) end
 	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l, r, f end
 	return 0, 0, false
 end
 
-function findMonsterDamagedByAttack(aBag, actorName)
+function findMonsterTakesCrit(aBag, aName)
+	l, r, f =  sequencePos(aBag, {enemy, "scores", "critical", "against"})
+	if not f then l, r, f = sequencePos(aBag, {aName, "suffers", "critical"}) end
+	return l, r, f
+end
+
+function findMonsterFailsAttack(aBag, aName)
+	local monster = {"it", "he", "she", "they", unpack(aName)}
+	local l, r, f = sequencePos(aBag, {monster, "fails", "attack", "roll"})
+	if not f then l, r, f = sequencePos(aBag, {monster, "misses", "attack"})
+	end
+	return l, r, f
+end
+
+function findMonsterDamagedByAttack(aBag, aName)
 	local l, r, f = sequencePos(aBag, {"damaged", "by", "attack"})
+	if not f then l, r, f = sequencePos(aBag, {aName, "takes", "damage", "from", "attack"}) end
 	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
 	return 0, 0, false
 end
 
-function findMonsterDamaged(aBag, actorName)
-	local l, r, f = sequencePos(aBag, {actorName, "subjected", "to", "damage"})
-	if not f then
-		l, r, f = sequencePos(aBag, {"damaged", "by", "creature", "within", "feet", actorName})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {actorName, "takes", "damage"})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, "deals", "damage", {"it","him","her","them", unpack(actorName)}})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, actorName, "can", "see", "deals", "damage"})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {"after", "taking", "damage", "attack"})
-	end
+function findMonsterDamaged(aBag, aName)
+	local l, r, f = sequencePos(aBag, {aName, "subjected", "to", "damage"})
+	if not f then l, r, f = sequencePos(aBag, {"damaged", "by", "creature", "within", "feet", aName}) end
+	if not f then l, r, f = sequencePos(aBag, {aName, "takes", "damage"}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, "deals", "damage", {"it","him","her","them", unpack(aName)}}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, aName, "can", "see", "deals", "damage"}) end
+	if not f then l, r, f = sequencePos(aBag, {"after", "taking", "damage", "attack"}) end
+	if not f then l, r, f = sequencePos(aBag, {aName, "is", "dealt", "damage"}) end
 	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
 	return 0, 0, false
 end
 
-function findMonsterDies(aBag, actorName)
-	local l, r, f = sequencePos(aBag, {actorName, "dies"})
-	if not f then
-		l, r, f = sequencePos(aBag, {actorName, {"reduced", "drops"}, {"0", "zero"}})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", actorName})
-	end
+function findMonsterDies(aBag, aName)
+	local l, r, f = sequencePos(aBag, {aName, "dies"})
+	if not f then l, r, f = sequencePos(aBag, {aName, {"reduced", "drops"}, {"0", "zero"}}) end
+	if not f then l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", aName}) end
 	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l, r, f end
 	return 0, 0, false
 end
 
-function findMonsterKills(aBag, actorName)
-	local l, r, f = sequencePos(aBag, {actorName, "kills"})
-	if not f then
-		l, r, f = sequencePos(aBag, {actorName, "reduces", {"0", "zero"}})
-	end
+function findMonsterKills(aBag, aName)
+	local l, r, f = sequencePos(aBag, {aName, "kills"})
+	if not f then l, r, f = sequencePos(aBag, {aName, "reduces", {"0", "zero"}}) end
 	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
 	return 0, 0, false
 end
 
-function findMonsterFailsSave(aBag, actorName)
-	return sequencePos(aBag, {actorName, "fails", "saving", "throw"})
+function findMonsterFailsSave(aBag, aName)
+	return sequencePos(aBag, {aName, "fails", "saving", "throw"})
 end
 
 function findWouldBeHit(aBag)
@@ -576,52 +593,42 @@ function findWouldBeHit(aBag)
 end
 
 -- When another creature the dragon can see within 15 feet is hit by an attack, the dragon deflects the attack, turning the hit into a miss.
-function findOtherIsHit(aBag, actorName)
+function findOtherIsHit(aBag, aName)
 	local l, r, f = sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
-	if not f then
-		l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"})
-	end
+	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
 	return l, r, f
 end
 
-function findOtherDamaged(aBag, actorName)
+function findOtherDamaged(aBag, aName)
 	return sequencePos(aBag, {otherOrAlly, "takes", "damage"})
 end
 
 --When a creature who the cackler can see within 30 feet of them dies,
 -- the cackler magically teleports into the space the creature occupied.
-function findOtherDies(aBag, actorName)
+function findOtherDies(aBag, aName)
 	local l, r, f = sequencePos(aBag, {otherOrAlly, "dies"})
-	if not f then
-		l, r, f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}})
-	end
-	if not f then
-		l, r, f = sequencePos(aBag, {"creature", actorName, "see", "dies"})
-	end
+	if not f then l, r, f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}}) end
+	if not f then l, r, f = sequencePos(aBag, {"creature", aName, "see", "dies"}) end
 	return l, r, f
 end
 
-function findOtherKills(aBag, actorName)
+function findOtherKills(aBag, aName)
 	local l, r, f = sequencePos(aBag, {otherOrAlly, "kills"})
-	if not f then
-		l, r, f = sequencePos(aBag, {otherOrAlly, "reduces", {"0", "zero"}})
-	end
+	if not f then l, r, f = sequencePos(aBag, {otherOrAlly, "reduces", {"0", "zero"}}) end
 	return l, r, f
 end
 
-function findOtherFailsSave(aBag, actorName)
+function findOtherFailsSave(aBag, aName)
 	return sequencePos(aBag, {otherOrAlly, "fails", "saving", "throw"})
 end
 
-function enemyAttacksAllies(aBag, actorName)
-	return sequencePos(aBag, {enemy, actorName, "see", "attacks", otherOrAlly})
+function enemyAttacksAllies(aBag, aName)
+	return sequencePos(aBag, {enemy, aName, "see", "attacks", otherOrAlly})
 end
 
-function selfOrAllyAttacked(aBag, actorName)
-	local l, r, f = sequencePos(aBag, {actorName, "creature", "attacked"})
-	if not f then
-		l, r, f = sequencePos(aBag, {"creature", actorName, "attacked"})
-	end
+function selfOrAllyAttacked(aBag, aName)
+	local l, r, f = sequencePos(aBag, {aName, "creature", "attacked"})
+	if not f then l, r, f = sequencePos(aBag, {"creature", aName, "attacked"}) end
 	return l, r, f
 end
 
@@ -642,12 +649,13 @@ function parseAttackRange(aBag, l, r, aTrigger)
 end
 
 function parseAttackResult(aBag, l, r, aTrigger)
-	if hasNoneWithin(aBag, l, r, {"hits","hit","misses","miss"}) then
+	local miss = {"misses","miss","missed"}
+	if hasNoneWithin(aBag, l, r, {"hits","hit", unpack(miss)}) then
 		aTrigger[IS_MISSED] = true
 		aTrigger[IS_HIT] = true
 	else
 		if hasOneOfWithin(aBag, l, r, {"hits","hit"}) then aTrigger[IS_HIT] = true end
-		if hasOneOfWithin(aBag, l, r, {"misses","miss"}) then aTrigger[IS_MISSED] = true end
+		if hasOneOfWithin(aBag, l, r, miss) then aTrigger[IS_MISSED] = true end
 	end
 end
 
@@ -714,6 +722,10 @@ end
 -- Next word in the sequence must appear after the previous one.
 -- aSeq is in form: {"str", {"opt_1", "opt_2", "opt_n"}, "other_str"}.
 -- Any optional strings found in aBag will satisfy the check.
+-- Keep in mind that the function checks FIRST APPEARANCE of a word, so a search:
+-- {"whenever", "hits", "damage"} with input
+-- "creature .. takes lightning damage whenever it hits the M with an attack that deals slashing damage"
+-- will not work, because the word "damage" appears earlier than 'whenever'
 function sequencePos(aBag, aSeq)
 	local nFirst = 0
 	local nLast = 0
