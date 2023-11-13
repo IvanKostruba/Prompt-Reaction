@@ -10,12 +10,13 @@
 
 	Changelog:
 		1.0.0 - Initial release
+		1.0.1 - Added parsing and triggers for: creature heals; monster suffers a crit; monster fails an attack. Start Turn only triggered on PCs turn.
 -->
 <root version="1.0" release="1.0.1">
-	<announcement text="illahad's Prompt Reaction v1.0.0 for 5E ruleset." font="emotefont" icon="react_prompt"/>
+	<announcement text="illahad's Prompt Reaction v1.0.1 for 5E ruleset." font="emotefont" icon="react_prompt"/>
  	<properties>
 		<name>Feature: illahad's Prompt Reaction</name>
-		<version>1.0.0</version>
+		<version>1.0.1</version>
 		<author>illahad (Ivan Kostruba)</author>
 		<description>When a monster has a reaction and its trigger comes up, a prompt will appear in the chat.</description>
 		<ruleset>
