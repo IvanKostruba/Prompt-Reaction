@@ -8,11 +8,14 @@ This extension parses NPCs added in the Combat Tracker and detects what reaction
 The extension can detect and process not only simple triggers like “this creature is hit” but also “third-party” triggers like “a creature starts its turn near the monster” or “monster’s ally is killed”. Specifically, it can detect:
 * An attack on the monster hits or misses (attack type, melee or ranged is also recognized).
 * An attack on the monster’s allies hits or misses.
-* The monster takes damage [of type X] or dies.
-* An ally takes damage or dies.
+* The monster takes damage (of type X, type is parsed) or dies.
+* An ally takes damage (of type X, type is parsed) or dies.
 * Monster kills a creature.
-* Creature starts its turn.
+* Creature starts its turn. (Only triggered by PCs)
 * The monster or an ally fails a saving throw.
+* The monster suffers a crit.
+* Monster fails an attack.
+* Creature regains hit points.
 
 The extension currently cannot process:
 * Spells. Specifically triggers like “creature casts a spell”. Currently not triggered.
