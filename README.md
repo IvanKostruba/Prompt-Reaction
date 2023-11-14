@@ -7,14 +7,25 @@ This extension parses NPCs added in the Combat Tracker and detects what reaction
 
 The extension can detect and process not only simple triggers like “this creature is hit” but also “third-party” triggers like “a creature starts its turn near the monster” or “monster’s ally is killed”. Specifically, it can detect:
 * An attack on the monster hits or misses (attack type, melee or ranged is also recognized).
+  * There are many recognized formulas: "when a creature within X feet (hits | misses | targets) (monster_name | it | him | her) with an (melee | ranged) attack"; "enemy hits the monster with an attack; "a creature attacks the monster"; "a creature makes attack against the monster"; "if the monster is (hit | missed | targeted) with an (melee | ranged) attack"; "when hit by an attack, the monster doex X"...
 * An attack on the monster’s allies hits or misses.
-* The monster takes damage (of type X, type is parsed) or dies.
-* An ally takes damage (of type X, type is parsed) or dies.
+  * "(another creature | an ally) is (hit | missed | targeted) by an attack"; "a creture (hits | misses | targets) an ally with an attack".
+* The monster takes damage (of type X, type is parsed).
+  * There are also numerous possible wordings: "the monster_name is damaged by an attack"; "the monster takes (damage_type) damage"; "the monster is subjected to (type) damage"; "enemy deals damage to the monster"; "the monster is dealt damage"...
+* The monster dies.
+  * Examples are: "the monster_name dies"; "the monster is reduced to 0 hit points"; "a creature reduces the monster to 0 hit points"; "the monster drops to 0 hit points"...
+* An ally takes damage (of type X, type is parsed).
+  * "(other creature | an ally | creature other than the monster ) takes damage".
+* An ally dies
+  * "(an ally | another creature) (dies | drops to 0 hit points | is reduced to 0".
 * Monster kills a creature.
+  * "the monster (kills|reduces to 0 hit points)"
 * Creature starts its turn. (Only triggered by PCs)
 * The monster or an ally fails a saving throw.
 * The monster suffers a crit.
+  * Typical wording is "when a creature scores a critical hit against the monster_name" or "when the monster_name suffers a critical hit".
 * Monster fails an attack.
+  * Typical wording is "when the monster_name fails an attack roll" or "monster_name misses with a(n) (melee|ranged) attack"
 * Creature regains hit points.
 
 The extension currently cannot process:
