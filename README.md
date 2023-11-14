@@ -9,7 +9,7 @@ The extension can detect and process not only simple triggers like “this creat
 * An attack on the monster hits or misses (attack type, melee or ranged is also recognized).
   * There are many recognized formulas: "when a creature within X feet (hits | misses | targets) (monster_name | it | him | her) with an (melee | ranged) attack"; "enemy hits the monster with an attack; "a creature attacks the monster"; "a creature makes attack against the monster"; "if the monster is (hit | missed | targeted) with an (melee | ranged) attack"; "when hit by an attack, the monster doex X"...
 * An attack on the monster’s allies hits or misses.
-  * "(another creature | an ally) is (hit | missed | targeted) by an attack"; "a creture (hits | misses | targets) an ally with an attack".
+  * "(another creature | an ally) is (hit | missed | targeted) by an attack"; "a creature (hits | misses | targets) an ally with an attack".
 * The monster takes damage (of type X, type is parsed).
   * There are also numerous possible wordings: "the monster_name is damaged by an attack"; "the monster takes (damage_type) damage"; "the monster is subjected to (type) damage"; "enemy deals damage to the monster"; "the monster is dealt damage"...
 * The monster dies.
