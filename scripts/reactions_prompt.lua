@@ -161,7 +161,7 @@ function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
 	if eff.isUnconscious then
 		if aAction.aFlags[DIES] ~= nil and rTarget.sCTNode == rOrigTarget.sCTNode
 		then
-			eff.isUnconscious = nil -- Unconscious in practice often means dead, but creature can react to it's demise.
+			eff.isUnconscious = nil -- Unconscious in practice often means dead, but creature may have a reaction to it's demise.
 		end
 	end
 	eff.isStunned = EffectManager5E.hasEffectCondition(rTarget, "Stunned")
@@ -212,8 +212,8 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 	else aAction.aFlags[IS_MISSED] = true end
 	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
 	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
-	matchAllReactions(aAction, rTarget, rSource) 
-	if aAction.aFlags[IS_MISSED] then matchAllReactions({aFlags={[ATK_FAIL]=true}}, rSource, rTarget) end
+	matchAllReactions(aAction, rTarget, rSource)
+	if aAction.aFlags[IS_MISSED] and rSource ~= nil then matchAllReactions({aFlags={[ATK_FAIL]=true}}, rSource, rTarget) end
 	if rRoll.sResult == "crit" then matchAllReactions({aFlags={[CRIT]=true}}, rTarget, rSource) end
 end
 
@@ -466,12 +466,14 @@ function parseTrait(sName, aActorName, aPowerWords)
 	local aReaction = {isSelf=true, isPassive=true, isUnconditional=true}
 	local aTrigger = {}
 	aBag = makeAppearanceMap(aPowerWords, 40)
-	local l, r, f = findMonsterKills(aBag, aActorName)
-	if f then aTrigger[KILLS] = true end
-	if not f then l, r, f = findMonsterDies(aBag, aActorName)
+	local l, r, f = findMonsterDies(aBag, aActorName)
+	if f then
 		local _, _, isCondition = findNotIncapacitated(aBag)
 		if isCondition then aReaction.isUnconditional = nil end
-		if f then aTrigger[DIES] = true end
+		aTrigger[DIES] = true
+	end
+	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+		if f then aTrigger[KILLS] = true end
 	end
 	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits","attack"})
 		if not f then l, r, f = sequencePos(aBag, {"whenever","hits","attack","damage"}) end
@@ -526,7 +528,7 @@ function findEnemyAttacks(aBag, aName)
 	return 0, 0, false
 end
 
-local isHit = {"hit", "missed", "targeted"}
+local isHit = {"hit", "struck", "missed", "targeted"}
 function findMonsterIsAttacked(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
 	l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
@@ -570,13 +572,16 @@ function findMonsterDamaged(aBag, aName)
 end
 
 function findMonsterDies(aBag, aName)
-	local l, r, f = sequencePos(aBag, {aName, "dies"})
-	if not f then l, r, f = sequencePos(aBag, {aName, {"reduced", "drops"}, {"0", "zero"}}) end
+	local l, r, f = sequencePos(aBag, {"the", aName, "dies"})
+	if not f then l, r, f = sequencePos(aBag, {"the", aName, {"reduced", "drops"}, {"0", "zero"}}) end
 	if not f then l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", aName}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, "within", aName, "reduces", {"0", "zero"}}) end
+	if not f then l, r, f = sequencePos(aBag, {enemy, "reduces", aName,  {"0", "zero"}}) end
 	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l, r, f end
 	return 0, 0, false
 end
 
+-- When the crone kills a Humanoid, she can immediately
 function findMonsterKills(aBag, aName)
 	local l, r, f = sequencePos(aBag, {aName, "kills"})
 	if not f then l, r, f = sequencePos(aBag, {aName, "reduces", {"0", "zero"}}) end
@@ -592,7 +597,6 @@ function findWouldBeHit(aBag)
 	return sequencePos(aBag, {"against", "attack", "that", "would", "hit"})
 end
 
--- When another creature the dragon can see within 15 feet is hit by an attack, the dragon deflects the attack, turning the hit into a miss.
 function findOtherIsHit(aBag, aName)
 	local l, r, f = sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
 	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
@@ -603,8 +607,9 @@ function findOtherDamaged(aBag, aName)
 	return sequencePos(aBag, {otherOrAlly, "takes", "damage"})
 end
 
---When a creature who the cackler can see within 30 feet of them dies,
--- the cackler magically teleports into the space the creature occupied.
+-- When an Undead under the vetala'a control is reduced to 0 hp, the vetala can force it to explode.
+-- In response to a gnoll being reduced to 0 hit points
+-- When a non-minion hobgoblin who Varrox can see within 60 feet of him takes damage,
 function findOtherDies(aBag, aName)
 	local l, r, f = sequencePos(aBag, {otherOrAlly, "dies"})
 	if not f then l, r, f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}}) end
@@ -650,11 +655,11 @@ end
 
 function parseAttackResult(aBag, l, r, aTrigger)
 	local miss = {"misses","miss","missed"}
-	if hasNoneWithin(aBag, l, r, {"hits","hit", unpack(miss)}) then
+	if hasNoneWithin(aBag, l, r, {"hits","hit","struck", unpack(miss)}) then
 		aTrigger[IS_MISSED] = true
 		aTrigger[IS_HIT] = true
 	else
-		if hasOneOfWithin(aBag, l, r, {"hits","hit"}) then aTrigger[IS_HIT] = true end
+		if hasOneOfWithin(aBag, l, r, {"hits","hit", "struck"}) then aTrigger[IS_HIT] = true end
 		if hasOneOfWithin(aBag, l, r, miss) then aTrigger[IS_MISSED] = true end
 	end
 end
