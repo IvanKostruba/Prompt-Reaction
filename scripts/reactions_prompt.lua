@@ -1,3 +1,5 @@
+local CombatGroupsLoaded = false
+
 function registerOptions()
 	OptionsManager.registerOption2("REPRO_MSG_FORMAT", false, "option_header_REPRO", "option_label_REPRO_chat_output", "option_entry_cycler",
 		{ labels = "option_val_npc_link|option_val_power_desc|option_val_off", values = "npc_ref|power_desc|off", baselabel = "option_val_power_link", baseval = "power_ref", default = "option_val_power_link" });
@@ -7,9 +9,20 @@ function registerOptions()
 		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" });
 	OptionsManager.registerOption2("REPRO_EFFECT_WARN", false, "option_header_REPRO", "option_label_REPRO_effect_warning", "option_entry_cycler",
 		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+	OptionsManager.registerOption2("REPRO_WARN_HIDDEN_TOKENS", false, "option_header_REPRO", "option_label_REPRO_hidden_tokens", "option_entry_cycler", 
+		{ labels = "option_val_off", values = "off", baselabel = "option_val_on", baseval = "on", default = "on" });
+	--Register option for if Combat Groups extension is loaded
+	if CombatGroupsLoaded then
+		OptionsManager.registerOption2("REPRO_WARN_HIDDEN_GROUPS", false, "option_header_REPRO", "option_label_REPRO_hidden_groups", "option_entry_cycler", 
+		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+	end
 end
 
 function onInit()
+	for _, name in pairs(Extension.getExtensions()) do
+		if name == "CombatGroups" then CombatGroupsLoaded = true end
+	end
+
 	registerOptions()
 
 	onNPCPostAddReProOrig = CombatRecordManager.getRecordTypePostAddCallback("npc")
@@ -152,6 +165,10 @@ function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
 	end
 	local eff = {}
 	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget);
+	local tokenvis = DB.getValue(nodeTarget,"tokenvis",1)
+	if tokenvis == 0 and OptionsManager.getOption("REPRO_WARN_HIDDEN_TOKENS") == "off" then return false end
+	local groupvis = DB.getValue(nodeTarget,"groupvis",1)
+	if groupvis == 0 and OptionsManager.getOption("REPRO_WARN_HIDDEN_GROUPS") == "off" then return false end
 	if aReaction.isPassive == nil and DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
 		eff.hasReacted = true
 		sendWarningMessage(rTarget, eff)
