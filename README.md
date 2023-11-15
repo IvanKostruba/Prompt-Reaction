@@ -47,6 +47,13 @@ The extension currently cannot process:
 
 **Warn if an effect prevents reaction**: (on | off) When turned on, messages will be sent to the chat if a reaction could be triggered, but an incapacitated condition prevents the monster from reacting, of when the monster must see its target, but the target is invisible or the monster is blinded, or if the monster already spend its reaction (“reaction” checkbox is ticked on the monster record in the CT).
 
+
+**Notify for hidden tokens**: (on | off) When turned off, reaction notifications will not be triggered for hidden tokens.
+
+
+**Notify in hidden Combat Groups**: (on | off) Compatibility option for "Combat Groups" extension. When turned off (default), no reaction notifications will be shown for combatants in hidden groups.
+
+
 ## How does it work
 
 After FG launches, the extension scans the Combat Tracker records and indexes the reactions in them. It happens only once and triggered the first time you either:
