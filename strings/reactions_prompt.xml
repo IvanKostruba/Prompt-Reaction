@@ -16,6 +16,8 @@
 	<string name="option_label_REPRO_report_parsing">Report parsing results</string>
 	<string name="option_label_REPRO_message_recipients">Notification recipients</string>
 	<string name="option_label_REPRO_effect_warning">Warn if an effect prevents reaction</string>
+	<string name="option_label_REPRO_hidden_groups">Notify in hidden Combat Groups</string>
+	<string name="option_label_REPRO_hidden_tokens">Notify for hidden tokens</string>
 
 	<!-- VALUES -->
 	<string name="option_val_power_link">Reaction link</string>
