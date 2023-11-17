@@ -76,3 +76,9 @@ If you want to incorporate this into one of your own extensions, have at it, but
 
 Credit for the icon goes to flaticon.com who generously allow free use with attribution:
 [Return icons created by Kiranshastry - Flaticon](https://www.flaticon.com/free-icons/return)
+[Dimensions icons created by Jesus Chavarria - Flaticon](https://www.flaticon.com/free-icons/dimensions)
+
+Credit for the other icons goes to The Noun Project:
+[Abnormal stun Icons, Noun Project CC BY 3.0](https://thenounproject.com/browse/icons/term/abnormal-stun/)
+[Skill shield projectile resistance Icons, Noun Project CC BY 3.0](https://thenounproject.com/browse/icons/term/skill-shield-projectile-resistance/)
+[Skill shield penetrate Icons, Noun Project CC BY 3.0](https://thenounproject.com/browse/icons/term/skill-shield-penetrate/)
