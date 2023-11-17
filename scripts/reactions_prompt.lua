@@ -2,19 +2,19 @@ local CombatGroupsLoaded = false
 
 function registerOptions()
 	OptionsManager.registerOption2("REPRO_MSG_FORMAT", false, "option_header_REPRO", "option_label_REPRO_chat_output", "option_entry_cycler",
-		{ labels = "option_val_npc_link|option_val_power_desc|option_val_off", values = "npc_ref|power_desc|off", baselabel = "option_val_power_link", baseval = "power_ref", default = "option_val_power_link" });
+		{ labels = "option_val_npc_link|option_val_power_desc|option_val_off", values = "npc_ref|power_desc|off", baselabel = "option_val_power_link", baseval = "power_ref", default = "option_val_power_link" })
 	OptionsManager.registerOption2("REPRO_REPORT_PARSING", false, "option_header_REPRO", "option_label_REPRO_report_parsing", "option_entry_cycler",
-		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" })
 	OptionsManager.registerOption2("REPRO_RECIPIENT", false, "option_header_REPRO", "option_label_REPRO_message_recipients", "option_entry_cycler",
-		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" });
+		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" })
 	OptionsManager.registerOption2("REPRO_EFFECT_WARN", false, "option_header_REPRO", "option_label_REPRO_effect_warning", "option_entry_cycler",
-		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" })
 	OptionsManager.registerOption2("REPRO_WARN_HIDDEN_TOKENS", false, "option_header_REPRO", "option_label_REPRO_hidden_tokens", "option_entry_cycler", 
-		{ labels = "option_val_off", values = "off", baselabel = "option_val_on", baseval = "on", default = "on" });
+		{ labels = "option_val_off", values = "off", baselabel = "option_val_on", baseval = "on", default = "on" })
 	--Register option for if Combat Groups extension is loaded
 	if CombatGroupsLoaded then
 		OptionsManager.registerOption2("REPRO_WARN_HIDDEN_GROUPS", false, "option_header_REPRO", "option_label_REPRO_hidden_groups", "option_entry_cycler", 
-		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" });
+		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" })
 	end
 end
 
@@ -26,17 +26,17 @@ function onInit()
 	registerOptions()
 
 	onNPCPostAddReProOrig = CombatRecordManager.getRecordTypePostAddCallback("npc")
-	CombatRecordManager.setRecordTypePostAddCallback("npc", postNPCAddDecorator);
+	CombatRecordManager.setRecordTypePostAddCallback("npc", postNPCAddDecorator)
 
 	ActionHeal.onHealReProOrig = ActionHeal.onHeal
 	ActionHeal.onHeal = onHealDecorator
-	ActionsManager.registerResultHandler("heal", ActionHeal.onHeal);
+	ActionsManager.registerResultHandler("heal", ActionHeal.onHeal)
 
 	ActionAttack.applyAttackReProOrig = ActionAttack.applyAttack
 	ActionAttack.applyAttack = applyAttackDecorator
 
 	ActionDamage.applyDamageReProOrig = ActionDamage.applyDamage
-	ActionDamage.applyDamage = applyDamageDecorator;
+	ActionDamage.applyDamage = applyDamageDecorator
 
 	ActionSave.applySaveReProOrig = ActionSave.applySave
 	ActionSave.applySave = applySaveDecorator
@@ -48,14 +48,14 @@ local isCTScanDone = false
 local ReactionOnSelf = {}
 local ReactionOnOther = {}
 
-function addReaction(aTable, sID, aReaction)
-	if aTable[sID] == nil then aTable[sID] = {aReaction}
-	else table.insert(aTable[sID], aReaction) end
+function addReaction(aTable, sID, rReact)
+	if aTable[sID] == nil then aTable[sID] = {rReact}
+	else table.insert(aTable[sID], rReact) end
 end
 
 function ctListScan(ctNode)
 	if isCTScanDone then return false end
-	if type(ctNode) ~= "databasenode" then ctNode = DB.findNode(ctNode.sCTNode); end
+	if type(ctNode) ~= "databasenode" then ctNode = DB.findNode(ctNode.sCTNode) end
 	for _,v in pairs(DB.getChildren(DB.getParent(ctNode))) do
 		scanActor(v)
 	end
@@ -67,25 +67,25 @@ function postNPCAddDecorator(tCustom)
 	-- Call the original onNPCPostAdd callback
 	onNPCPostAddReProOrig(tCustom)
 	if not tCustom.nodeRecord or not tCustom.nodeCT then
-		return;
+		return
 	end
 	if not ctListScan(tCustom.nodeCT) then scanActor(tCustom.nodeCT) end
 end
 
 function scanActor(ctNode)
-	local rActor = ActorManager.resolveActor(ctNode);
+	local rActor = ActorManager.resolveActor(ctNode)
 	if rActor.sType ~= "npc" then return end
 	aParsedName = parseName(rActor.sName)
 	reactorID = extractID(rActor)
 	processNodeData(ctNode, "reactions", parseReaction, aParsedName, reactorID)
 	processNodeData(ctNode, "traits", parseTrait, aParsedName, reactorID)
-	DB.addHandler(ctNode, "onDelete", onCombatantDelete);
+	DB.addHandler(ctNode, "onDelete", onCombatantDelete)
 end
 
 function processNodeData(ctNode, sRecordType, fParser, aParsedName, reactorID)
 	for _,v in ipairs(DB.getChildList(ctNode, sRecordType)) do
-		local sName = StringManager.trim(DB.getValue(v, "name", ""));
-		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""));
+		local sName = StringManager.trim(DB.getValue(v, "name", ""))
+		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""))
 		r = fParser(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
 		if r.aTrigger ~= nil and next(r.aTrigger) ~= nil then
 			r.vDBRecord = v
@@ -111,8 +111,8 @@ function extractID(rActor)
 end
 
 function onCombatantDelete(vNode)
-	DB.removeHandler(vNode, "onDelete", onCombatantDelete);
-	local rActor = ActorManager.resolveActor(vNode);
+	DB.removeHandler(vNode, "onDelete", onCombatantDelete)
+	local rActor = ActorManager.resolveActor(vNode)
 	reactorID = extractID(rActor)
 	ReactionOnSelf[reactorID] = nil
 	ReactionOnOther[reactorID] = nil
@@ -149,30 +149,42 @@ local ATK_FAIL = "ATK_FAIL"
 
 -- rOrigTarget always come from the roll
 -- rTarget is resolved from the combatant ID when evaluating reactions on others
-function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
+function tryTriggerReaction(aAction, rReact, rTarget, rOrigTarget, rSource)
 	if next(aAction.aFlags) == nil then return false end
 	for f, _ in pairs(aAction.aFlags) do
-		if aReaction.aTrigger[f] == nil then return false end
+		if rReact.aTrigger[f] == nil then return false end
 	end
 	if aAction.aFlags[DAMAGE] then
-		if next(aReaction.aDamageTypes) ~= nil then
+		if next(rReact.aDamageTypes) ~= nil then
 			local foundDamageType = false
 			for _, t in ipairs(aAction.aDamageTypes) do
-				for _, rt in ipairs(aReaction.aDamageTypes) do if t == rt then foundDamageType = true end end
+				for _, rt in ipairs(rReact.aDamageTypes) do if t == rt then foundDamageType = true end end
 			end
 			if not foundDamageType then return false end
 		end
 	end
 	local eff = {}
-	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget);
+	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	local tokenvis = DB.getValue(nodeTarget,"tokenvis",1)
 	if tokenvis == 0 and OptionsManager.getOption("REPRO_WARN_HIDDEN_TOKENS") == "off" then return false end
 	local groupvis = DB.getValue(nodeTarget,"groupvis",1)
 	if groupvis == 0 and OptionsManager.getOption("REPRO_WARN_HIDDEN_GROUPS") == "off" then return false end
-	if aReaction.isPassive == nil and DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
+	if rReact.isPassive == nil and DB.getValue(nodeTarget, "reaction", 0) ~= 0 then
 		eff.hasReacted = true
 		sendWarningMessage(rTarget, eff)
 		return false
+	end
+	local opt = {}
+	if rReact.nDistEnemy ~= nil then
+		local d = measureDistance(nodeTarget, rSource)
+		if d ~= nil and d > rReact.nDistEnemy then opt.nDistWant = rReact.nDistEnemy; opt.nDistGot = d end
+	elseif rReact.nDistAlly ~= nil and rTarget.sCTNode ~= rOrigTarget.sCTNode then
+		local d = measureDistance(nodeTarget, rOrigTarget)
+		if d ~= nil and d > rReact.nDistAlly then opt.nDistWant = rReact.nDistAlly; opt.nDistGot = d end
+	end
+	if rReact.nACBonus ~= nil and aAction.aFlags[IS_HIT] then
+		-- nAtkExcess is nil if it was an automatic hit.
+		opt.canSave = aAction.nAtkExcess ~= nil and aAction.nAtkExcess < rReact.nACBonus
 	end
 	eff.isUnconscious = EffectManager5E.hasEffectCondition(rTarget, "Unconscious")
 	if eff.isUnconscious then
@@ -185,7 +197,7 @@ function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
 	eff.isParalyzed = EffectManager5E.hasEffectCondition(rTarget, "Paralyzed")
 	eff.isIncapacitated = EffectManager5E.hasEffectCondition(rTarget, "Incapacitated")
 	eff.isPetrified = EffectManager5E.hasEffectCondition(rTarget, "Petrified")
-	if aReaction.isUnconditional == nil and
+	if rReact.isUnconditional == nil and
 		(eff.isUnconscious or eff.isStunned or eff.isParalyzed or eff.isIncapacitated or eff.isPetrified)
 	then
 		sendWarningMessage(rTarget, eff)
@@ -193,18 +205,30 @@ function triggerReaction(aAction, aReaction, rTarget, rOrigTarget, rSource)
 	end
 	eff.isInvisible = EffectManager5E.hasEffectCondition(rSource, "Invisible")
 	eff.isBlinded = EffectManager5E.hasEffectCondition(rTarget, "Blinded")
-	if aReaction.aTrigger[VISION] and (eff.isBlinded or eff.isInvisible) then
+	if rReact.aTrigger[VISION] and (eff.isBlinded or eff.isInvisible) then
 		sendWarningMessage(rTarget, eff)
 		return false
 	end
+	sendChatMessage(rTarget, rReact, opt)
 	return true
+end
+
+function measureDistance(nodeT, rOther)
+	local tt = Token.getToken(DB.getValue(nodeT, "tokenrefnode", ""), DB.getValue(nodeT, "tokenrefid", ""))
+	local nodeSrc = DB.findNode(rOther.sCTNode)
+	local st = Token.getToken(DB.getValue(nodeSrc, "tokenrefnode", ""), DB.getValue(nodeSrc, "tokenrefid", ""))
+	local ic = ImageManager.getImageControl(tt, false)
+	if not ic or not st or not tt then return nil end
+	local dist = ic.getDistanceBetween(tt, st)
+	if not dist then return nil end
+	return dist
 end
 
 function matchAllReactions(aAction, rTarget, rSource)
 	reactorID = extractID(rTarget)
 	if ReactionOnSelf[reactorID] ~= nil then
 		for _, rs in ipairs(ReactionOnSelf[reactorID]) do
-			if triggerReaction(aAction, rs, rTarget, rTarget, rSource) then sendChatMessage(rTarget, rs) end
+			tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
 		end
 	end
 	for id, reactionsList in pairs(ReactionOnOther) do
@@ -212,7 +236,7 @@ function matchAllReactions(aAction, rTarget, rSource)
 		local rActor = ActorManager.resolveActor(sReactorCTNode)
 		if rActor.sCTNode ~= rTarget.sCTNode then
 			for _, ro in ipairs(reactionsList) do
-				if triggerReaction(aAction, ro, rActor, rTarget, rSource) then sendChatMessage(rActor, ro, rActor) end
+				tryTriggerReaction(aAction, ro, rActor, rTarget, rSource)
 			end
 		end
 	end
@@ -225,7 +249,9 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
 	ctListScan(rTarget)
 	local aAction = {aFlags={}}
-	if rRoll.sResult == "hit" or rRoll.sResult == "crit" then aAction.aFlags[IS_HIT] = true
+	if rRoll.sResult == "hit" or rRoll.sResult == "crit" then
+		aAction.aFlags[IS_HIT] = true
+		if rRoll.nFirstDie ~= 20 then aAction.nAtkExcess = rRoll.nTotal - rRoll.nDefenseVal end -- auto hits cannot be stopped
 	else aAction.aFlags[IS_MISSED] = true end
 	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
 	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
@@ -240,7 +266,7 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
 	ctListScan(rTarget)
-	local rDamageOutput = ActionDamage.decodeDamageText(rRoll.nTotal, rRoll.sDesc);
+	local rDamageOutput = ActionDamage.decodeDamageText(rRoll.nTotal, rRoll.sDesc)
 	if rTarget.sType ~= "npc" or (rDamageOutput.sType ~= "damage" and rDamageOutput.sType ~= "heal") then
 		-- Assume that sType == "charsheet" means it's a "PC". Temporary HP, recovery etc. skipped.
 		return
@@ -256,7 +282,7 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 		end
 	elseif rDamageOutput.sType == "heal" then f[HEAL] = true end
 	matchAllReactions({aFlags=f, aDamageTypes=dmgTypes}, rTarget, rSource)
-	local targetStatus = ActorHealthManager.getHealthStatus(rTarget);
+	local targetStatus = ActorHealthManager.getHealthStatus(rTarget)
 	if ActorHealthManager.isDyingOrDeadStatus(targetStatus) then
 		matchAllReactions({aFlags={[DIES]=true}}, rTarget, rSource)
 		matchAllReactions({aFlags={[KILLS]=true}}, rSource, rSource)
@@ -288,39 +314,51 @@ end
 function onTurnStart(nodeEntry)
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
 	ctListScan(nodeEntry)
-	local rActor = ActorManager.resolveActor(nodeEntry);
+	local rActor = ActorManager.resolveActor(nodeEntry)
 	if rActor.sType == "npc" then return end -- only PCs will trigger start turn reations
 	matchAllReactions({aFlags={[STARTS_TURN]=true}}, rActor, rActor)
 end
 
-function sendChatMessage(rTarget, aReaction)
+function sendChatMessage(rTarget, rReact, rSpecial)
 	local sOutput = OptionsManager.getOption("REPRO_MSG_FORMAT")
 	if sOutput == "off" then return end
-	local sName = StringManager.trim(DB.getValue(aReaction.vDBRecord, "name", ""));
-	local msg = ChatManager.createBaseMessage(rTarget);
+	local sName = StringManager.trim(DB.getValue(rReact.vDBRecord, "name", ""))
+	local msg = ChatManager.createBaseMessage(rTarget)
 	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
 	msg.icon = "react_prompt"
-	msg.text = string.format("%s may be triggered", sName)
+	msg.text = string.format("%s possibly triggered", sName)
+	if rSpecial.nDistWant ~= nil then
+		msg.icon = "react_distance"
+		msg.text = string.format("%s is available, but distance is too long: limit is %d, measured %d feet", sName, rSpecial.nDistWant, rSpecial.nDistGot)
+	elseif rSpecial.canSave ~= nil then
+		if rSpecial.canSave then
+			msg.icon = "deflect_arrow"
+			msg.text = string.format("%s: AC bonus can deflect the attack", sName)
+		else
+			msg.icon = "penetrate"
+			msg.text = string.format("%s: AC bonus is not enough to stop the attack", sName)
+		end
+	end
 	if sOutput == "power_desc" then
-		local sDesc = StringManager.trim(DB.getValue(aReaction.vDBRecord, "desc", ""));
+		local sDesc = StringManager.trim(DB.getValue(rReact.vDBRecord, "desc", ""))
 		msg.text = msg.text .. "\n" .. sDesc
 	elseif sOutput == "power_ref" then
-		msg.shortcuts = {{description=sName, class="ct_power_detail", recordname=DB.getPath(aReaction.vDBRecord)}}
+		msg.shortcuts = {{description=sName, class="ct_power_detail", recordname=DB.getPath(rReact.vDBRecord)}}
 	elseif sOutput == "npc_ref" then
 		msg.shortcuts = {{description=sName, class="npc", recordname=DB.getPath(rTarget.sCreatureNode)}}
 	end
-	Comm.deliverChatMessage(msg);
+	Comm.deliverChatMessage(msg)
 end
 
-function sendParsingMessage(sName, aReaction, isOther)
+function sendParsingMessage(sName, rReact, isOther)
 	if OptionsManager.getOption("REPRO_REPORT_PARSING") == "off" then return end
-	local msg = ChatManager.createBaseMessage();
+	local msg = ChatManager.createBaseMessage()
 	msg.secret = true
 	msg.icon = "react_prompt"
 	t = string.format("[%s] trigger:", sName)
 	if isOther then t = t .. " another creature" end
 	sAttackRange = "an"
-	local tr = aReaction.aTrigger
+	local tr = rReact.aTrigger
 	if tr[ATK_MELEE] and tr[ATK_RANGED] then sAttackRange = "a melee or ranged"
 	elseif tr[ATK_MELEE] then sAttackRange = "a melee"
 	elseif tr[ATK_RANGED] then sAttackRange = "a ranged" end
@@ -330,8 +368,8 @@ function sendParsingMessage(sName, aReaction, isOther)
 	if tr[CRIT] then t = t .. " suffers a critical hit;" end
 	if tr[DAMAGE] then
 		local sTypes = "any"
-		if aReaction.aDamageTypes and next(aReaction.aDamageTypes) ~= nil then
-			sTypes = table.concat(aReaction.aDamageTypes, "|")
+		if rReact.aDamageTypes and next(rReact.aDamageTypes) ~= nil then
+			sTypes = table.concat(rReact.aDamageTypes, "|")
 		end
 		t = t .. " takes [" .. sTypes .. "] damage;"
 	end
@@ -339,17 +377,20 @@ function sendParsingMessage(sName, aReaction, isOther)
 	if tr[DIES] then t = t .. " dies;" end
 	if tr[FAILS_SAVE] then t = t .. " fails a save;" end
 	if tr[HEAL] then t = t .. " regains hp;" end
-	if tr[STARTS_TURN] then t = t .. " a creature starts its turn;" end
+	if tr[STARTS_TURN] then t = t .. " starts its turn;" end
 	if tr[ATK_FAIL] then t = t .. " fails attack roll;" end
+	if rReact.nDistEnemy ~= nil then t = t .. string.format(" enemy within %d feet;", rReact.nDistEnemy)
+	elseif rReact.nDistAlly ~= nil then t = t .. string.format(" within %d feet;", rReact.nDistAlly) end
+	if rReact.nACBonus ~= nil then t = t .. string.format(" AC bonus +%d;", rReact.nACBonus) end
 	msg.text = t
-	Comm.deliverChatMessage(msg);
+	Comm.deliverChatMessage(msg)
 end
 
 function sendWarningMessage(rTarget, eff)
 	if OptionsManager.getOption("REPRO_EFFECT_WARN") == "off" then return end
-	local msg = ChatManager.createBaseMessage(rTarget);
+	local msg = ChatManager.createBaseMessage(rTarget)
 	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
-	msg.icon = "react_prompt"
+	msg.icon = "cond_stun"
 	msg.text = "reaction impossible: creature"
 	if eff.hasReacted then msg.text = msg.text .. " already reacted"
 	else
@@ -361,22 +402,24 @@ function sendWarningMessage(rTarget, eff)
 		if eff.isBlinded then msg.text = msg.text .. " must see the target but is blinded" end
 		if eff.isInvisible then msg.text = msg.text .. " must see the target but it's invisible" end
 	end
-	Comm.deliverChatMessage(msg);
+	Comm.deliverChatMessage(msg)
 end
 
 function parseReaction(sName, aActorName, aPowerWords)
-	local aReaction = {isSelf=true}
+	local rReact = {isSelf=true}
 	local aTrigger = {}
-	aBag = makeAppearanceMap(aPowerWords, 35)
+	aBag = makeAppearanceMap(aPowerWords, 50)
 	local l, r, f = findEnemyAttacks(aBag, aActorName)
 	if f then
 		parseAttackRange(aBag, l, r, aTrigger)
 		parseAttackResult(aBag, l, r, aTrigger)
+		parseDistance(aBag, aPowerWords, rReact)
 	end
 	if not f then l, r, f = findMonsterIsAttacked(aBag, aActorName)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
+			parseACBonus(aBag, aPowerWords, rReact)
 		end
 	end
 	if not f then l, r, f = findMonsterTakesCrit(aBag, aActorName)
@@ -397,7 +440,7 @@ function parseReaction(sName, aActorName, aPowerWords)
 			_, _, orCreature = sequencePos(aBag, {aActorName, "or", "creature"})
 			if not orCreature then  _, _, orCreature = sequencePos(aBag, {"creature", "or", aActorName}) end
 			aTrigger[DAMAGE] = true
-			if orCreature then aReaction.isOther = true end;
+			if orCreature then rReact.isOther = true; parseDistance(aBag, aPowerWords, rReact, true) end
 		end
 	end
 	if not f then l, r, f = findMonsterKills(aBag, aActorName)
@@ -410,37 +453,44 @@ function parseReaction(sName, aActorName, aPowerWords)
 		if f then
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
+			parseACBonus(aBag, aPowerWords, rReact)
 		end
 	end
 	if not f then l, r, f = findOtherIsHit(aBag, aActorName)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
-			aReaction.isOther = true; aReaction.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact, true)
+			parseACBonus(aBag, aPowerWords, rReact)
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l, r, f = findOtherDamaged(aBag, aActorName)
 		if f then
+			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[DAMAGE] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l, r, f = findOtherDies(aBag, aActorName)
 		if f then
+			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[DIES] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l, r, f = findOtherKills(aBag, aActorName)
 		if f then
+			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[KILLS] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l, r, f = findOtherFailsSave(aBag, aActorName)
 		if f then
+			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[FAILS_SAVE] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	-- When another creature within 60 feet of the commander who can hear and understand them
@@ -449,30 +499,33 @@ function parseReaction(sName, aActorName, aPowerWords)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
-			aReaction.isOther = true; aReaction.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact)
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l, r, f = selfOrAllyAttacked(aBag, aActorName)
 		if f then
-			aTrigger[IS_HIT] = true; aTrigger[ATK_MELEE] = true; aTrigger[ATK_RANGED] = true;
-			aReaction.isOther = true; aReaction.isSelf = true
+			aTrigger[IS_HIT] = true; aTrigger[ATK_MELEE] = true; aTrigger[ATK_RANGED] = true
+			rReact.isOther = true; rReact.isSelf = true
+			parseDistance(aBag, aPowerWords, rReact, true)
 		end
 	end
 	if not f then l, r, f = sequencePos(aBag, {"creature","regains","hit","points"})
 		if f then
 			aTrigger[HEAL] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact)
 		end
 	end
-	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
-	aReaction.aTrigger = aTrigger
-	return aReaction
+	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
+	rReact.aTrigger = aTrigger
+	return rReact
 end
 
-function parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
+function parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
 	if next(aTrigger) ~= nil then
 		parseVision(aBag, l, r, aTrigger)
-		if aTrigger[DAMAGE] then aReaction.aDamageTypes = parseDamageType(aPowerWords, l, r) end
+		if aTrigger[DAMAGE] then rReact.aDamageTypes = parseDamageType(aPowerWords, l, r) end
 	end
 end
 
@@ -480,13 +533,13 @@ function parseTrait(sName, aActorName, aPowerWords)
 	if isStandard(sName, aPowerWords) then
 		return {}
 	end
-	local aReaction = {isSelf=true, isPassive=true, isUnconditional=true}
+	local rReact = {isSelf=true, isPassive=true, isUnconditional=true}
 	local aTrigger = {}
 	aBag = makeAppearanceMap(aPowerWords, 40)
 	local l, r, f = findMonsterDies(aBag, aActorName)
 	if f then
 		local _, _, isCondition = findNotIncapacitated(aBag)
-		if isCondition then aReaction.isUnconditional = nil end
+		if isCondition then rReact.isUnconditional = nil end
 		aTrigger[DIES] = true
 	end
 	if not f then l, r, f = findMonsterKills(aBag, aActorName)
@@ -498,6 +551,7 @@ function parseTrait(sName, aActorName, aPowerWords)
 		if f then
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
+			parseDistance(aBag, aPowerWords, rReact)
 		end
 	end
 	if not f then l, r, f = findMonsterFailsSave(aBag, aActorName)
@@ -506,23 +560,25 @@ function parseTrait(sName, aActorName, aPowerWords)
 	if not f then l, r, f = sequencePos(aBag, {"creature","starts","its","turn"})
 		if f then
 			local _, _, isCondition = findNotIncapacitated(aBag)
-			if isCondition then aReaction.isUnconditional = nil end
+			if isCondition then rReact.isUnconditional = nil end
 			aTrigger[STARTS_TURN] = true
-			aReaction.isOther = true; aReaction.isSelf = false
+			rReact.isOther = true; rReact.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact, true)
 		end
 	end
 	-- Order is important since: "a creature that touches ... takes damage" or "when fails a save .. takes damage"
 	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
 		if f then aTrigger[DAMAGE] = true end
 	end
-	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, aReaction)
-	aReaction.aTrigger = aTrigger
-	return aReaction
+	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
+	rReact.aTrigger = aTrigger
+	return rReact
 end
 
 local standardTraits = {avoidance=true,evasion=true,["magic resistance"]=true,["gnome cunning"]=true,["magic weapons"]=true,
 	["hellish weapons"]=true,["angelic weapons"]=true,["improved critical"]=true,["superior critical"]=true,regeneration=true,
-	["innate spellcasting"]=true,spellcasting=true,minion=true,incorporeal=true,["sunlight hypersensitivity"]=true}
+	["innate spellcasting"]=true,spellcasting=true,minion=true,incorporeal=true,["sunlight hypersensitivity"]=true,
+	["detect life"]=true}
 
 function isStandard(sName, aPowerWords)
 	if standardTraits[sName] then return true end
@@ -548,7 +604,7 @@ end
 local isHit = {"hit", "struck", "missed", "targeted"}
 function findMonsterIsAttacked(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
-	l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
+	local l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
 	-- "when targeted by an attack, M"
 	if not f then l, r, f = sequencePos(aBag, {{"when", "if"}, isHit, "attack", aName}) end
 	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l, r, f end
@@ -556,7 +612,7 @@ function findMonsterIsAttacked(aBag, aName)
 end
 
 function findMonsterTakesCrit(aBag, aName)
-	l, r, f =  sequencePos(aBag, {enemy, "scores", "critical", "against"})
+	local l, r, f =  sequencePos(aBag, {enemy, "scores", "critical", "against"})
 	if not f then l, r, f = sequencePos(aBag, {aName, "suffers", "critical"}) end
 	return l, r, f
 end
@@ -589,7 +645,7 @@ function findMonsterDamaged(aBag, aName)
 end
 
 function findMonsterDies(aBag, aName)
-	local l, r, f = sequencePos(aBag, {"the", aName, "dies"})
+	local l, r, f = sequencePos(aBag, {{"if", "when"}, aName, "dies"})
 	if not f then l, r, f = sequencePos(aBag, {"the", aName, {"reduced", "drops"}, {"0", "zero"}}) end
 	if not f then l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", aName}) end
 	if not f then l, r, f = sequencePos(aBag, {enemy, "within", aName, "reduces", {"0", "zero"}}) end
@@ -615,9 +671,7 @@ function findWouldBeHit(aBag)
 end
 
 function findOtherIsHit(aBag, aName)
-	local l, r, f = sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
-	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
-	return l, r, f
+	return sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
 end
 
 function findOtherDamaged(aBag, aName)
@@ -645,7 +699,9 @@ function findOtherFailsSave(aBag, aName)
 end
 
 function enemyAttacksAllies(aBag, aName)
-	return sequencePos(aBag, {enemy, aName, "see", "attacks", otherOrAlly})
+	local l, r, f = sequencePos(aBag, {enemy, aName, "see", "attacks", otherOrAlly})
+	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
+	return l, r, f
 end
 
 function selfOrAllyAttacked(aBag, aName)
@@ -692,6 +748,23 @@ function parseDamageType(aPowerWords, l, r)
 		i = i - 1
 	end
 	return aDamageTypes
+end
+
+function parseDistance(aBag, aWords, rReact, isAlly)
+	local _, r, f = sequencePos(aBag, {"within", "feet"})
+	if not f then return end
+	if isAlly then rReact.nDistAlly = tonumber(aWords[r-1]) else rReact.nDistEnemy = tonumber(aWords[r-1]) end
+end
+
+function parseACBonus(aBag, aWords, rReact)
+	local nACPos = 0
+	local l, _, f = sequencePos(aBag, {{"gains", "gain"}, "bonus", "ac"})
+	if f then nACPos = l + 2
+	else
+		l, _, f = sequencePos(aBag, {"add", "to", "ac"})
+		if f then nACPos = l + 1 end
+	end
+	if nACPos ~= 0 then rReact.nACBonus = tonumber(aWords[nACPos]); end
 end
 
 function makeAppearanceMap(aPowerWords, nLim)
