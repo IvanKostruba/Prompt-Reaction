@@ -5,6 +5,10 @@ This is an extension for Fantasy Grounds VTT written in Lua.
 
 This extension parses NPCs added in the Combat Tracker and detects what reactions they have. When the corresponding trigger happens, and the creature is able to react i.e. it is not incapacitated, did not spend its reaction and can see the target if vision is required, a prompt will appear in the chat. The prompt can be a link to the reaction, a link to the NPC sheet or the description of the reaction itself.
 
+Besides incapacitation, the extension will check if the distance is right provided that you use a grid and it's open.
+
+"Parry" - type abilities that allow you to add a bonus to monsters AC as a reaction have additional automation - the extension will tell you whether adding the bonus will deflect attack or not.
+
 The extension can detect and process not only simple triggers like “this creature is hit” but also “third-party” triggers like “a creature starts its turn near the monster” or “monster’s ally is killed”. Specifically, it can detect:
 * An attack on the monster hits or misses (attack type, melee or ranged is also recognized).
   * There are many recognized formulas: "when a creature within X feet (hits | misses | targets) (monster_name | it | him | her) with an (melee | ranged) attack"; "enemy hits the monster with an attack; "a creature attacks the monster"; "a creature makes attack against the monster"; "if the monster is (hit | missed | targeted) with an (melee | ranged) attack"; "when hit by an attack, the monster doex X"...
@@ -31,7 +35,6 @@ The extension can detect and process not only simple triggers like “this creat
 The extension currently cannot process:
 * Spells. Specifically triggers like “creature casts a spell”. Currently not triggered.
 * Creature types, for example “a gnoll within 60 feet of the monster dies”, this creature type is not considered for triggering reactions (any creature that dies will trigger the reaction).
-* Distances. When the reaction says “a creature within N feet from the monster does X”. The distance will not be considered for trigger matching, so any creature that does X will trigger the message.
 * Movement. “When a creature within 30 feet of the monster moves…”. Such reactions cannot be detected in the current version.
 
 ## Configuration options
