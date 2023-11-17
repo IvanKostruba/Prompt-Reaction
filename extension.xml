@@ -5,19 +5,26 @@
 	No core Fantasy Grounds files have been modified to create this extension.
 	If you want to incorporate this into one of your own extensions, have at it, but just credit me.
 
-	Credit for the icon goes to flaticon.com who generously allow free use with attribution:
+	Credit for the return and dimensions icons goes to flaticon.com who generously allow free use with attribution:
 	<a href="https://www.flaticon.com/free-icons/return" title="return icons">Return icons created by Kiranshastry - Flaticon</a>
+	<a href="https://www.flaticon.com/free-icons/dimensions" title="dimensions icons">Dimensions icons created by Jesus Chavarria - Flaticon</a>
+
+	Credit for the other icons goes to The Noun Project:
+	<a href="https://thenounproject.com/browse/icons/term/abnormal-stun/" title="abnormal stun Icons">Noun Project</a> (CC BY 3.0)
+	<a href="https://thenounproject.com/browse/icons/term/skill-shield-projectile-resistance/" title="skill shield projectile resistance Icons">Noun Project</a> (CC BY 3.0)
+	<a href="https://thenounproject.com/browse/icons/term/skill-shield-penetrate/" title="skill shield penetrate Icons">Noun Project</a> (CC BY 3.0)
 
 	Changelog:
 		1.0.0 - Initial release
 		1.0.1 - Added parsing and triggers for: creature heals; monster suffers a crit; monster fails an attack. Start Turn only triggered on PCs turn.
 		1.0.2 - Added compatibility with "CombatGroups" extension and options to skip notifications for hidden tokens or groups.
+		1.1.0 - Added distance parsing and measurement and special treatment of "parry" reactions.
 -->
-<root version="1.0" release="1.0.2">
-	<announcement text="illahad's Prompt Reaction v1.0.2 for 5E ruleset." font="emotefont" icon="react_prompt"/>
+<root version="1.0" release="1.1.0">
+	<announcement text="illahad's Prompt Reaction v1.1.0 for 5E ruleset." font="emotefont" icon="react_prompt"/>
  	<properties>
 		<name>Feature: illahad's Prompt Reaction</name>
-		<version>1.0.2</version>
+		<version>1.1.0</version>
 		<author>illahad (Ivan Kostruba)</author>
 		<description>When a monster has a reaction and its trigger comes up, a prompt will appear in the chat.</description>
 		<ruleset>
@@ -28,6 +35,10 @@
 		<includefile source="strings/reactions_prompt.xml"/>
 
 		<icon name="react_prompt" file="images/react_back.png" />
+		<icon name="react_distance" file="images/dimensions.png" />
+		<icon name="deflect_arrow" file="images/deflect-arrow.png" />
+		<icon name="penetrate" file="images/shield-penetrate.png" />
+		<icon name="cond_stun" file="images/condition_stun.png" />
 
 		<script name="ReactionsPrompt" file="scripts/reactions_prompt.lua" />
 	</base>
