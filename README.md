@@ -24,6 +24,8 @@ The extension can detect and process not only simple triggers like “this creat
   * "(an ally | another creature) (dies | drops to 0 hit points | is reduced to 0".
 * Monster kills a creature.
   * "the monster (kills|reduces to 0 hit points)"
+* Creature casts a spell:
+  * "when a creature that the monster can see (within X feet) casts a spell"
 * Creature starts its turn. (Only triggered by PCs)
 * The monster or an ally fails a saving throw.
 * The monster suffers a crit.
@@ -33,7 +35,6 @@ The extension can detect and process not only simple triggers like “this creat
 * Creature regains hit points.
 
 The extension currently cannot process:
-* Spells. Specifically triggers like “creature casts a spell”. Currently not triggered.
 * Creature types, for example “a gnoll within 60 feet of the monster dies”, this creature type is not considered for triggering reactions (any creature that dies will trigger the reaction).
 * Movement. “When a creature within 30 feet of the monster moves…”. Such reactions cannot be detected in the current version.
 
