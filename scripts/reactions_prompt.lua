@@ -41,6 +41,9 @@ function onInit()
 	ActionSave.applySaveReProOrig = ActionSave.applySave
 	ActionSave.applySave = applySaveDecorator
 
+	PowerManager.performActionReProOrig = PowerManager.performAction
+	PowerManager.performAction = performActionDecorator
+
 	CombatManager.setCustomTurnStart(onTurnStart) -- adds a listener, no need for a decorator
 end
 
@@ -137,6 +140,7 @@ local IS_MISSED = "MISS"
 local ATK_MELEE = "MELEE"
 local ATK_RANGED = "RANGED"
 local SPELL = "SPELL"
+local CAST = "CAST"
 local DAMAGE = "DAMAGE"
 local DIES = "DIES"
 local KILLS = "KILLS"
@@ -214,6 +218,7 @@ function tryTriggerReaction(aAction, rReact, rTarget, rOrigTarget, rSource)
 end
 
 function measureDistance(nodeT, rOther)
+	if nodeT == nil or rOther == nil then return nil end
 	local tt = Token.getToken(DB.getValue(nodeT, "tokenrefnode", ""), DB.getValue(nodeT, "tokenrefid", ""))
 	local nodeSrc = DB.findNode(rOther.sCTNode)
 	local st = Token.getToken(DB.getValue(nodeSrc, "tokenrefnode", ""), DB.getValue(nodeSrc, "tokenrefid", ""))
@@ -225,10 +230,12 @@ function measureDistance(nodeT, rOther)
 end
 
 function matchAllReactions(aAction, rTarget, rSource)
-	reactorID = extractID(rTarget)
-	if ReactionOnSelf[reactorID] ~= nil then
-		for _, rs in ipairs(ReactionOnSelf[reactorID]) do
-			tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
+	if rTarget ~= nil then
+		local reactorID = extractID(rTarget)
+		if ReactionOnSelf[reactorID] ~= nil then
+			for _, rs in ipairs(ReactionOnSelf[reactorID]) do
+				tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
+			end
 		end
 	end
 	for id, reactionsList in pairs(ReactionOnOther) do
@@ -319,6 +326,35 @@ function onTurnStart(nodeEntry)
 	matchAllReactions({aFlags={[STARTS_TURN]=true}}, rActor, rActor)
 end
 
+local magicSchools = {"abjuration", "divination", "evocation", "illusion", "enchantment", "transmutation", "necromancy", "conjuration"}
+
+function performActionDecorator(draginfo, rActor, rAction, nodePower)
+	local result = PowerManager.performActionReProOrig(draginfo, rActor, rAction, nodePower)
+
+	if rActor.sType ~= "charsheet" then return result end
+	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return result end
+	ctListScan(rActor)
+	local n = DB.getValue(nodePower, "name", ""):lower()
+	local s = DB.getValue(nodePower, "school", ""):lower()
+	local spell = false
+	if magicSchools[s] then spell = true end
+	if not spell then
+		local pg = DB.getValue(nodePower, "group", ""):lower()
+		local node = DB.findNode(rActor.sCreatureNode)
+		for _, v in ipairs(DB.getChildList(node, "powergroup")) do
+			if pg == DB.getValue(v, "name", ""):lower() then
+				spell = "memorization" == DB.getValue(v, "castertype", ""):lower() or
+					pg == Interface.getString("power_label_groupspells"):lower()
+			end
+		end
+	end
+	if spell then
+		-- castSpells[n] = true; we can store the name of the spell to associate attack or damage with it later
+		matchAllReactions({aFlags={[CAST]=true}}, rActor, rActor)
+	end
+	return result
+end
+
 function sendChatMessage(rTarget, rReact, rSpecial)
 	local sOutput = OptionsManager.getOption("REPRO_MSG_FORMAT")
 	if sOutput == "off" then return end
@@ -379,6 +415,7 @@ function sendParsingMessage(sName, rReact, isOther)
 	if tr[HEAL] then t = t .. " regains hp;" end
 	if tr[STARTS_TURN] then t = t .. " starts its turn;" end
 	if tr[ATK_FAIL] then t = t .. " fails attack roll;" end
+	if tr[CAST] then t = t .. " casts a spell;" end
 	if rReact.nDistEnemy ~= nil then t = t .. string.format(" enemy within %d feet;", rReact.nDistEnemy)
 	elseif rReact.nDistAlly ~= nil then t = t .. string.format(" within %d feet;", rReact.nDistAlly) end
 	if rReact.nACBonus ~= nil then t = t .. string.format(" AC bonus +%d;", rReact.nACBonus) end
@@ -493,6 +530,13 @@ function parseReaction(sName, aActorName, aPowerWords)
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
+	if not f then l, r, f = findEnemyCastsSpell(aBag, aActorName)
+		if f then
+			parseDistance(aBag, aPowerWords, rReact)
+			aTrigger[CAST] = true
+			rReact.isOther = true
+		end
+	end
 	-- When another creature within 60 feet of the commander who can hear and understand them
 	-- makes a saving throw, the commander can give that creature advantage on the saving throw.
 	if not f then l, r, f = enemyAttacksAllies(aBag, aActorName)
@@ -590,9 +634,11 @@ end
 local enemy = {"creature", "enemy", "attacker"}
 local hitsOrMisses = {"hits", "misses", "targets"}
 local otherOrAlly = {"another","other","ally","allies"}
+-- When a creature within 120 feet of Forzaantirilys attacks her,
 function findEnemyAttacks(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
 	local l, r, f = sequencePos(aBag, {enemy, "within", "feet", monster, hitsOrMisses, "attack"})
+	if not f then l, r, f = sequencePos(aBag, {enemy, "within", "feet", aName, "attacks", {"it", "him", "her", "them"}}) end
 	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"}) end
 	if not f then l, r, f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"}) end
 	if not f then l, r, f = sequencePos(aBag, {enemy, "attacks", monster}) end
@@ -604,7 +650,8 @@ end
 local isHit = {"hit", "struck", "missed", "targeted"}
 function findMonsterIsAttacked(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
-	local l, r, f = sequencePos(aBag, {{"when", "if"}, monster, isHit, "attack"})
+	-- sometimes monster name does not match, 'Cryomancer' may be called 'wizard' etc.
+	local l, r, f = sequencePos(aBag, {{"when", "if"}, {"the", monster}, isHit, "attack"})
 	-- "when targeted by an attack, M"
 	if not f then l, r, f = sequencePos(aBag, {{"when", "if"}, isHit, "attack", aName}) end
 	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l, r, f end
@@ -696,6 +743,10 @@ end
 
 function findOtherFailsSave(aBag, aName)
 	return sequencePos(aBag, {otherOrAlly, "fails", "saving", "throw"})
+end
+
+function findEnemyCastsSpell(aBag, aName)
+	return sequencePos(aBag, {enemy, "casts", "spell"})
 end
 
 function enemyAttacksAllies(aBag, aName)
