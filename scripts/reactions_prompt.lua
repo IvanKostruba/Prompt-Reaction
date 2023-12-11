@@ -4,7 +4,7 @@ function registerOptions()
 	OptionsManager.registerOption2("REPRO_MSG_FORMAT", false, "option_header_REPRO", "option_label_REPRO_chat_output", "option_entry_cycler",
 		{ labels = "option_val_npc_link|option_val_power_desc|option_val_off", values = "npc_ref|power_desc|off", baselabel = "option_val_power_link", baseval = "power_ref", default = "option_val_power_link" })
 	OptionsManager.registerOption2("REPRO_REPORT_PARSING", false, "option_header_REPRO", "option_label_REPRO_report_parsing", "option_entry_cycler",
-		{ labels = "option_val_on", values = "on", baselabel = "option_val_off", baseval = "off", default = "off" })
+		{ labels = "option_val_on|option_val_ct_add_only", values = "on|npc_add", baselabel = "option_val_off", baseval = "off", default = "off" })
 	OptionsManager.registerOption2("REPRO_RECIPIENT", false, "option_header_REPRO", "option_label_REPRO_message_recipients", "option_entry_cycler",
 		{ labels = "option_val_everyone", values = "everyone", baselabel = "option_val_only_gm", baseval = "gm", default = "gm" })
 	OptionsManager.registerOption2("REPRO_EFFECT_WARN", false, "option_header_REPRO", "option_label_REPRO_effect_warning", "option_entry_cycler",
@@ -60,7 +60,7 @@ function ctListScan(ctNode)
 	if isCTScanDone then return false end
 	if type(ctNode) ~= "databasenode" then ctNode = DB.findNode(ctNode.sCTNode) end
 	for _,v in pairs(DB.getChildren(DB.getParent(ctNode))) do
-		scanActor(v)
+		scanActor(v, true)
 	end
 	isCTScanDone = true
 	return true
@@ -72,39 +72,39 @@ function postNPCAddDecorator(tCustom)
 	if not tCustom.nodeRecord or not tCustom.nodeCT then
 		return
 	end
-	if not ctListScan(tCustom.nodeCT) then scanActor(tCustom.nodeCT) end
+	if not ctListScan(tCustom.nodeCT) then scanActor(tCustom.nodeCT, false) end
 end
 
-function scanActor(ctNode)
+function scanActor(ctNode, isBulk)
 	local rActor = ActorManager.resolveActor(ctNode)
 	if rActor.sType ~= "npc" then return end
 	aParsedName = parseName(rActor.sName)
 	reactorID = extractID(rActor)
-	processNodeData(ctNode, "reactions", parseReaction, aParsedName, reactorID)
-	processNodeData(ctNode, "traits", parseTrait, aParsedName, reactorID)
+	processNodeData(ctNode, "reactions", parseReaction, aParsedName, reactorID, isBulk)
+	processNodeData(ctNode, "traits", parseTrait, aParsedName, reactorID, isBulk)
 	DB.addHandler(ctNode, "onDelete", onCombatantDelete)
 end
 
-function processNodeData(ctNode, sRecordType, fParser, aParsedName, reactorID)
+function processNodeData(ctNode, sRecordType, fParser, aParsedName, reactorID, isBulk)
 	for _,v in ipairs(DB.getChildList(ctNode, sRecordType)) do
 		local sName = StringManager.trim(DB.getValue(v, "name", ""))
 		local sDesc = StringManager.trim(DB.getValue(v, "desc", ""))
 		r = fParser(sName:lower(), aParsedName, StringManager.parseWords(sDesc:lower()))
 		if r.aTrigger ~= nil and next(r.aTrigger) ~= nil then
 			r.vDBRecord = v
-			insertReaction(sName, reactorID, r)
+			insertReaction(sName, reactorID, r, isBulk)
 		end
 	end
 end
 
-function insertReaction(sName, id, r)
+function insertReaction(sName, id, r, isBulk)
 	if r.isSelf then
 		addReaction(ReactionOnSelf, id, r)
-		sendParsingMessage(sName, r, false)
+		sendParsingMessage(sName, r, false, isBulk)
 	end
 	if r.isOther then
 		addReaction(ReactionOnOther, id, r)
-		sendParsingMessage(sName, r, true)
+		sendParsingMessage(sName, r, true, isBulk)
 	end
 end
 
@@ -268,12 +268,14 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 end
 
 function applyDamageDecorator(rSource, rTarget, rRoll)
+	local origDamage = rRoll.nTotal -- applyDamage modifies the roll and that leads to warning when decoding.
+
 	-- call the original applyAttack method
 	ActionDamage.applyDamageReProOrig(rSource, rTarget, rRoll)
 
 	if OptionsManager.getOption("REPRO_MSG_FORMAT") == "off" then return end
 	ctListScan(rTarget)
-	local rDamageOutput = ActionDamage.decodeDamageText(rRoll.nTotal, rRoll.sDesc)
+	local rDamageOutput = ActionDamage.decodeDamageText(origDamage, rRoll.sDesc)
 	if rTarget.sType ~= "npc" or (rDamageOutput.sType ~= "damage" and rDamageOutput.sType ~= "heal") then
 		-- Assume that sType == "charsheet" means it's a "PC". Temporary HP, recovery etc. skipped.
 		return
@@ -386,8 +388,9 @@ function sendChatMessage(rTarget, rReact, rSpecial)
 	Comm.deliverChatMessage(msg)
 end
 
-function sendParsingMessage(sName, rReact, isOther)
-	if OptionsManager.getOption("REPRO_REPORT_PARSING") == "off" then return end
+function sendParsingMessage(sName, rReact, isOther, isBulk)
+	local opt = OptionsManager.getOption("REPRO_REPORT_PARSING")
+	if opt == "off" or (isBulk and opt == "npc_add") then return end
 	local msg = ChatManager.createBaseMessage()
 	msg.secret = true
 	msg.icon = "react_prompt"
