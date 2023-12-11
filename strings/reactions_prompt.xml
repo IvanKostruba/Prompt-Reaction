@@ -24,5 +24,6 @@
 	<string name="option_val_npc_link">NPC link</string>
 	<string name="option_val_power_desc">Reaction text</string>
 	<string name="option_val_only_gm">GM only</string>
-	<string name="option_val_everyone">everyone</string>
+	<string name="option_val_everyone">Everyone</string>
+	<string name="option_val_ct_add_only">NPC added only</string>
 </root>
