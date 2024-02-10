@@ -18,6 +18,9 @@ The extension can detect and process not only simple triggers like “this creat
   * There are also numerous possible wordings: "the monster_name is damaged by an attack"; "the monster takes (damage_type) damage"; "the monster is subjected to (type) damage"; "enemy deals damage to the monster"; "the monster is dealt damage"...
 * The monster dies.
   * Examples are: "the monster_name dies"; "the monster is reduced to 0 hit points"; "a creature reduces the monster to 0 hit points"; "the monster drops to 0 hit points"...
+* The monster becomes bloodied
+  * "when the monster_name is first bloodied" or "when first bloodied, the monster_name". (monster_name is not necessary)
+  * "when reduced to half (of its) hit points"
 * An ally takes damage (of type X, type is parsed).
   * "(other creature | an ally | creature other than the monster ) takes damage".
 * An ally dies
