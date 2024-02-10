@@ -150,6 +150,7 @@ local STARTS_TURN = "TURN"
 local CRIT = "CRIT"
 local HEAL = "HEAL"
 local ATK_FAIL = "ATK_FAIL"
+local BLOODIED = "BLOODIED"
 
 -- rOrigTarget always come from the roll
 -- rTarget is resolved from the combatant ID when evaluating reactions on others
@@ -295,6 +296,14 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 	if ActorHealthManager.isDyingOrDeadStatus(targetStatus) then
 		matchAllReactions({aFlags={[DIES]=true}}, rTarget, rSource)
 		matchAllReactions({aFlags={[KILLS]=true}}, rSource, rSource)
+	else
+		local _, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+		local bloodiedVal = DB.getValue(nodeTarget,"hptotal",0)/2
+		local wounds = DB.getValue(nodeTarget,"wounds",0)
+		if bloodiedVal == 0 or wounds < bloodiedVal then return end
+		if wounds - rRoll.nTotal < bloodiedVal then
+			matchAllReactions({aFlags={[BLOODIED]=true}}, rTarget, rSource)
+		end
 	end
 end
 
@@ -419,6 +428,7 @@ function sendParsingMessage(sName, rReact, isOther, isBulk)
 	if tr[STARTS_TURN] then t = t .. " starts its turn;" end
 	if tr[ATK_FAIL] then t = t .. " fails attack roll;" end
 	if tr[CAST] then t = t .. " casts a spell;" end
+	if tr[BLOODIED] then t = t .. " becomes bloodied;" end
 	if rReact.nDistEnemy ~= nil then t = t .. string.format(" enemy within %d feet;", rReact.nDistEnemy)
 	elseif rReact.nDistAlly ~= nil then t = t .. string.format(" within %d feet;", rReact.nDistAlly) end
 	if rReact.nACBonus ~= nil then t = t .. string.format(" AC bonus +%d;", rReact.nACBonus) end
@@ -449,33 +459,33 @@ function parseReaction(sName, aActorName, aPowerWords)
 	local rReact = {isSelf=true}
 	local aTrigger = {}
 	aBag = makeAppearanceMap(aPowerWords, 50)
-	local l, r, f = findEnemyAttacks(aBag, aActorName)
+	local l,r,f = findEnemyAttacks(aBag, aActorName)
 	if f then
 		parseAttackRange(aBag, l, r, aTrigger)
 		parseAttackResult(aBag, l, r, aTrigger)
 		parseDistance(aBag, aPowerWords, rReact)
 	end
-	if not f then l, r, f = findMonsterIsAttacked(aBag, aActorName)
+	if not f then l,r,f = findMonsterIsAttacked(aBag, aActorName)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
 			parseACBonus(aBag, aPowerWords, rReact)
 		end
 	end
-	if not f then l, r, f = findMonsterTakesCrit(aBag, aActorName)
+	if not f then l,r,f = findMonsterTakesCrit(aBag, aActorName)
 		if f then aTrigger[CRIT] = true end
 	end
-	if not f then l, r, f = findMonsterFailsAttack(aBag, aActorName)
+	if not f then l,r,f = findMonsterFailsAttack(aBag, aActorName)
 		if f then aTrigger[ATK_FAIL] = true end
 	end
-	if not f then l, r, f = findMonsterDamagedByAttack(aBag, aActorName)
+	if not f then l,r,f = findMonsterDamagedByAttack(aBag, aActorName)
 		if f then
 			aTrigger[DAMAGE] = true
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
 		end
 	end
-	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
+	if not f then l,r,f = findMonsterDamaged(aBag, aActorName)
 		if f then
 			_, _, orCreature = sequencePos(aBag, {aActorName, "or", "creature"})
 			if not orCreature then  _, _, orCreature = sequencePos(aBag, {"creature", "or", aActorName}) end
@@ -483,20 +493,20 @@ function parseReaction(sName, aActorName, aPowerWords)
 			if orCreature then rReact.isOther = true; parseDistance(aBag, aPowerWords, rReact, true) end
 		end
 	end
-	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+	if not f then l,r,f = findMonsterKills(aBag, aActorName)
 		if f then aTrigger[KILLS] = true end
 	end
-	if not f then l, r, f = findMonsterDies(aBag, aActorName)
+	if not f then l,r,f = findMonsterDies(aBag, aActorName)
 		if f then aTrigger[DIES] = true end
 	end
-	if not f then l, r, f = findWouldBeHit(aBag, aActorName)
+	if not f then l,r,f = findWouldBeHit(aBag, aActorName)
 		if f then
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseACBonus(aBag, aPowerWords, rReact)
 		end
 	end
-	if not f then l, r, f = findOtherIsHit(aBag, aActorName)
+	if not f then l,r,f = findOtherIsHit(aBag, aActorName)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
@@ -505,35 +515,35 @@ function parseReaction(sName, aActorName, aPowerWords)
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = findOtherDamaged(aBag, aActorName)
+	if not f then l,r,f = findOtherDamaged(aBag, aActorName)
 		if f then
 			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[DAMAGE] = true
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = findOtherDies(aBag, aActorName)
+	if not f then l,r,f = findOtherDies(aBag, aActorName)
 		if f then
 			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[DIES] = true
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = findOtherKills(aBag, aActorName)
+	if not f then l,r,f = findOtherKills(aBag, aActorName)
 		if f then
 			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[KILLS] = true
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = findOtherFailsSave(aBag, aActorName)
+	if not f then l,r,f = findOtherFailsSave(aBag, aActorName)
 		if f then
 			parseDistance(aBag, aPowerWords, rReact, true)
 			aTrigger[FAILS_SAVE] = true
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = findEnemyCastsSpell(aBag, aActorName)
+	if not f then l,r,f = findEnemyCastsSpell(aBag, aActorName)
 		if f then
 			parseDistance(aBag, aPowerWords, rReact)
 			aTrigger[CAST] = true
@@ -542,7 +552,7 @@ function parseReaction(sName, aActorName, aPowerWords)
 	end
 	-- When another creature within 60 feet of the commander who can hear and understand them
 	-- makes a saving throw, the commander can give that creature advantage on the saving throw.
-	if not f then l, r, f = enemyAttacksAllies(aBag, aActorName)
+	if not f then l,r,f = enemyAttacksAllies(aBag, aActorName)
 		if f then
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseAttackResult(aBag, l, r, aTrigger)
@@ -550,19 +560,22 @@ function parseReaction(sName, aActorName, aPowerWords)
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
-	if not f then l, r, f = selfOrAllyAttacked(aBag, aActorName)
+	if not f then l,r,f = selfOrAllyAttacked(aBag, aActorName)
 		if f then
 			aTrigger[IS_HIT] = true; aTrigger[ATK_MELEE] = true; aTrigger[ATK_RANGED] = true
 			rReact.isOther = true; rReact.isSelf = true
 			parseDistance(aBag, aPowerWords, rReact, true)
 		end
 	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","regains","hit","points"})
+	if not f then l,r,f = sequencePos(aBag, {"creature","regains","hit","points"})
 		if f then
 			aTrigger[HEAL] = true
 			rReact.isOther = true; rReact.isSelf = false
 			parseDistance(aBag, aPowerWords, rReact)
 		end
+	end
+	if not f then l,r,f = findMonsterBloodied(aBag)
+		if f then aTrigger[BLOODIED] = true end
 	end
 	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
 	rReact.aTrigger = aTrigger
@@ -583,28 +596,28 @@ function parseTrait(sName, aActorName, aPowerWords)
 	local rReact = {isSelf=true, isPassive=true, isUnconditional=true}
 	local aTrigger = {}
 	aBag = makeAppearanceMap(aPowerWords, 40)
-	local l, r, f = findMonsterDies(aBag, aActorName)
+	local l,r,f = findMonsterDies(aBag, aActorName)
 	if f then
 		local _, _, isCondition = findNotIncapacitated(aBag)
 		if isCondition then rReact.isUnconditional = nil end
 		aTrigger[DIES] = true
 	end
-	if not f then l, r, f = findMonsterKills(aBag, aActorName)
+	if not f then l,r,f = findMonsterKills(aBag, aActorName)
 		if f then aTrigger[KILLS] = true end
 	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","touches","hits","attack"})
-		if not f then l, r, f = sequencePos(aBag, {"whenever","hits","attack","damage"}) end
-		if not f then l, r, f = sequencePos(aBag, {"whenever","hits","attack"}) end
+	if not f then l,r,f = sequencePos(aBag, {"creature","touches","hits","attack"})
+		if not f then l,r,f = sequencePos(aBag, {"whenever","hits","attack","damage"}) end
+		if not f then l,r,f = sequencePos(aBag, {"whenever","hits","attack"}) end
 		if f then
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
 			parseDistance(aBag, aPowerWords, rReact)
 		end
 	end
-	if not f then l, r, f = findMonsterFailsSave(aBag, aActorName)
+	if not f then l,r,f = findMonsterFailsSave(aBag, aActorName)
 		if f then aTrigger[FAILS_SAVE] = true end
 	end
-	if not f then l, r, f = sequencePos(aBag, {"creature","starts","its","turn"})
+	if not f then l,r,f = sequencePos(aBag, {"creature","starts",{"its","their"},"turn"})
 		if f then
 			local _, _, isCondition = findNotIncapacitated(aBag)
 			if isCondition then rReact.isUnconditional = nil end
@@ -614,8 +627,11 @@ function parseTrait(sName, aActorName, aPowerWords)
 		end
 	end
 	-- Order is important since: "a creature that touches ... takes damage" or "when fails a save .. takes damage"
-	if not f then l, r, f = findMonsterDamaged(aBag, aActorName)
+	if not f then l,r,f = findMonsterDamaged(aBag, aActorName)
 		if f then aTrigger[DAMAGE] = true end
+	end
+	if not f then l,r,f = findMonsterBloodied(aBag)
+		if f then aTrigger[BLOODIED] = true end
 	end
 	parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
 	rReact.aTrigger = aTrigger
@@ -640,13 +656,13 @@ local otherOrAlly = {"another","other","ally","allies"}
 -- When a creature within 120 feet of Forzaantirilys attacks her,
 function findEnemyAttacks(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
-	local l, r, f = sequencePos(aBag, {enemy, "within", "feet", monster, hitsOrMisses, "attack"})
-	if not f then l, r, f = sequencePos(aBag, {enemy, "within", "feet", aName, "attacks", {"it", "him", "her", "them"}}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, "attacks", monster}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, "makes", "attack", "against", monster}) end
-	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	local l,r,f = sequencePos(aBag, {enemy, "within", "feet", monster, hitsOrMisses, "attack"})
+	if not f then l,r,f = sequencePos(aBag, {enemy, "within", "feet", aName, "attacks", {"it", "him", "her", "them"}}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, hitsOrMisses, monster, "attack"}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, monster, "can", "see", hitsOrMisses, "attack"}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, "attacks", monster}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, "makes", "attack", "against", monster}) end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l,r,f end
 	return 0, 0, false
 end
 
@@ -654,61 +670,61 @@ local isHit = {"hit", "struck", "missed", "targeted"}
 function findMonsterIsAttacked(aBag, aName)
 	local monster = {"it","him","her","them", unpack(aName)}
 	-- sometimes monster name does not match, 'Cryomancer' may be called 'wizard' etc.
-	local l, r, f = sequencePos(aBag, {{"when", "if"}, {"the", monster}, isHit, "attack"})
+	local l,r,f = sequencePos(aBag, {{"when", "if"}, {"the", monster}, isHit, "attack"})
 	-- "when targeted by an attack, M"
-	if not f then l, r, f = sequencePos(aBag, {{"when", "if"}, isHit, "attack", aName}) end
-	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l, r, f end
+	if not f then l,r,f = sequencePos(aBag, {{"when", "if"}, isHit, "attack", aName}) end
+	if f and hasNoneWithin(aBag, 0, r, {"creature", unpack(otherOrAlly)}) then return l,r,f end
 	return 0, 0, false
 end
 
 function findMonsterTakesCrit(aBag, aName)
-	local l, r, f =  sequencePos(aBag, {enemy, "scores", "critical", "against"})
-	if not f then l, r, f = sequencePos(aBag, {aName, "suffers", "critical"}) end
-	return l, r, f
+	local l,r,f =  sequencePos(aBag, {enemy, "scores", "critical", "against"})
+	if not f then l,r,f = sequencePos(aBag, {aName, "suffers", "critical"}) end
+	return l,r,f
 end
 
 function findMonsterFailsAttack(aBag, aName)
 	local monster = {"it", "he", "she", "they", unpack(aName)}
-	local l, r, f = sequencePos(aBag, {monster, "fails", "attack", "roll"})
-	if not f then l, r, f = sequencePos(aBag, {monster, "misses", "attack"})
+	local l,r,f = sequencePos(aBag, {monster, "fails", "attack", "roll"})
+	if not f then l,r,f = sequencePos(aBag, {monster, "misses", "attack"})
 	end
-	return l, r, f
+	return l,r,f
 end
 
 function findMonsterDamagedByAttack(aBag, aName)
-	local l, r, f = sequencePos(aBag, {"damaged", "by", "attack"})
-	if not f then l, r, f = sequencePos(aBag, {aName, "takes", "damage", "from", "attack"}) end
-	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	local l,r,f = sequencePos(aBag, {"damaged", "by", "attack"})
+	if not f then l,r,f = sequencePos(aBag, {aName, "takes", "damage", "from", "attack"}) end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l,r,f end
 	return 0, 0, false
 end
 
 function findMonsterDamaged(aBag, aName)
-	local l, r, f = sequencePos(aBag, {aName, "subjected", "to", "damage"})
-	if not f then l, r, f = sequencePos(aBag, {"damaged", "by", "creature", "within", "feet", aName}) end
-	if not f then l, r, f = sequencePos(aBag, {aName, "takes", "damage"}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, "deals", "damage", {"it","him","her","them", unpack(aName)}}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, aName, "can", "see", "deals", "damage"}) end
-	if not f then l, r, f = sequencePos(aBag, {"after", "taking", "damage", "attack"}) end
-	if not f then l, r, f = sequencePos(aBag, {aName, "is", "dealt", "damage"}) end
-	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	local l,r,f = sequencePos(aBag, {aName, "subjected", "to", "damage"})
+	if not f then l,r,f = sequencePos(aBag, {"damaged", "by", "creature", "within", "feet", aName}) end
+	if not f then l,r,f = sequencePos(aBag, {aName, "takes", "damage"}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, "deals", "damage", {"it","him","her","them", unpack(aName)}}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, aName, "can", "see", "deals", "damage"}) end
+	if not f then l,r,f = sequencePos(aBag, {"after", "taking", "damage", "attack"}) end
+	if not f then l,r,f = sequencePos(aBag, {aName, "is", "dealt", "damage"}) end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l,r,f end
 	return 0, 0, false
 end
 
 function findMonsterDies(aBag, aName)
-	local l, r, f = sequencePos(aBag, {{"if", "when"}, aName, "dies"})
-	if not f then l, r, f = sequencePos(aBag, {"the", aName, {"reduced", "drops"}, {"0", "zero"}}) end
-	if not f then l, r, f = sequencePos(aBag, {{"it", "he", "she"}, "dies", aName}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, "within", aName, "reduces", {"0", "zero"}}) end
-	if not f then l, r, f = sequencePos(aBag, {enemy, "reduces", aName,  {"0", "zero"}}) end
-	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l, r, f end
+	local l,r,f = sequencePos(aBag, {{"if", "when"}, aName, "dies"})
+	if not f then l,r,f = sequencePos(aBag, {"the", aName, {"reduced", "drops"}, {"0", "zero"}}) end
+	if not f then l,r,f = sequencePos(aBag, {{"it", "he", "she"}, "dies", aName}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, "within", aName, "reduces", {"0", "zero"}}) end
+	if not f then l,r,f = sequencePos(aBag, {enemy, "reduces", aName,  {"0", "zero"}}) end
+	if f and hasNoneWithin(aBag, 0, r, {"who", unpack(otherOrAlly)}) then return l,r,f end
 	return 0, 0, false
 end
 
 -- When the crone kills a Humanoid, she can immediately
 function findMonsterKills(aBag, aName)
-	local l, r, f = sequencePos(aBag, {aName, "kills"})
-	if not f then l, r, f = sequencePos(aBag, {aName, "reduces", {"0", "zero"}}) end
-	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l, r, f end
+	local l,r,f = sequencePos(aBag, {aName, "kills"})
+	if not f then l,r,f = sequencePos(aBag, {aName, "reduces", {"0", "zero"}}) end
+	if f and hasNoneWithin(aBag, 0, r, otherOrAlly) then return l,r,f end
 	return 0, 0, false
 end
 
@@ -732,16 +748,16 @@ end
 -- In response to a gnoll being reduced to 0 hit points
 -- When a non-minion hobgoblin who Varrox can see within 60 feet of him takes damage,
 function findOtherDies(aBag, aName)
-	local l, r, f = sequencePos(aBag, {otherOrAlly, "dies"})
-	if not f then l, r, f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}}) end
-	if not f then l, r, f = sequencePos(aBag, {"creature", aName, "see", "dies"}) end
-	return l, r, f
+	local l,r,f = sequencePos(aBag, {otherOrAlly, "dies"})
+	if not f then l,r,f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}}) end
+	if not f then l,r,f = sequencePos(aBag, {"creature", aName, "see", "dies"}) end
+	return l,r,f
 end
 
 function findOtherKills(aBag, aName)
-	local l, r, f = sequencePos(aBag, {otherOrAlly, "kills"})
-	if not f then l, r, f = sequencePos(aBag, {otherOrAlly, "reduces", {"0", "zero"}}) end
-	return l, r, f
+	local l,r,f = sequencePos(aBag, {otherOrAlly, "kills"})
+	if not f then l,r,f = sequencePos(aBag, {otherOrAlly, "reduces", {"0", "zero"}}) end
+	return l,r,f
 end
 
 function findOtherFailsSave(aBag, aName)
@@ -753,15 +769,21 @@ function findEnemyCastsSpell(aBag, aName)
 end
 
 function enemyAttacksAllies(aBag, aName)
-	local l, r, f = sequencePos(aBag, {enemy, aName, "see", "attacks", otherOrAlly})
-	if not f then l, r, f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
-	return l, r, f
+	local l,r,f = sequencePos(aBag, {enemy, aName, "see", "attacks", otherOrAlly})
+	if not f then l,r,f = sequencePos(aBag, {enemy, hitsOrMisses, otherOrAlly, "attack"}) end
+	return l,r,f
 end
 
 function selfOrAllyAttacked(aBag, aName)
-	local l, r, f = sequencePos(aBag, {aName, "creature", "attacked"})
-	if not f then l, r, f = sequencePos(aBag, {"creature", aName, "attacked"}) end
-	return l, r, f
+	local l,r,f = sequencePos(aBag, {aName, "creature", "attacked"})
+	if not f then l,r,f = sequencePos(aBag, {"creature", aName, "attacked"}) end
+	return l,r,f
+end
+
+function findMonsterBloodied(aBag)
+	local l,r,f = sequencePos(aBag, {"first", "bloodied"})
+	if not f then l,r,f = sequencePos(aBag, {"reduced", "half", "hit", "points"}) end
+	return l,r,f
 end
 
 function findNotIncapacitated(aBag)
