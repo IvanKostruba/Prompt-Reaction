@@ -82,6 +82,7 @@ function scanActor(ctNode, isBulk)
 	reactorID = extractID(rActor)
 	processNodeData(ctNode, "reactions", parseReaction, aParsedName, reactorID, isBulk)
 	processNodeData(ctNode, "traits", parseTrait, aParsedName, reactorID, isBulk)
+	processNodeData(ctNode, "spells", parseSpell, aParsedName, reactorID, isBulk)
 	DB.addHandler(ctNode, "onDelete", onCombatantDelete)
 end
 
@@ -650,6 +651,53 @@ function isStandard(sName, aPowerWords)
 	end
 end
 
+function parseSpell(sName, aActorName, aPowerWords)
+	aBag = makeAppearanceMap(aPowerWords, 20)
+	local rReact = {isSelf=true}
+	if not hasWordsWithin(aBag, 0, 20, {"reaction", "which", "you", "take"}) then
+		return rReact
+	end
+	aBag = makeAppearanceMap(aPowerWords, 45, aBag["take"])
+	local aTrigger = {}
+	local l,r,f = sequencePos(aBag, {"when", "damage"}) -- Absorb Elements
+	if f then
+		aTrigger[DAMAGE] = true
+		parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
+	end
+	if not f then l,r,f = sequencePos(aBag, {"when", "creature", "casting", "spell"}) -- Counterspell
+		if f then
+			aTrigger[CAST] = true
+			rReact.isOther = true; rReact.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact)
+			parseVision(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l,r,f = findMonsterDamaged(aBag, {"you"}) -- Hellish Rebuke
+		if f then
+			aTrigger[DAMAGE] = true
+			parseDistance(aBag, aPowerWords, rReact)
+			parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
+		end
+	end
+	if not f then l,r,f = sequencePos(aBag, {"when", "you", {"hit", "missed", "targeted"}, "attack"}) -- Shield
+		if f then
+			parseAttackRange(aBag, l, r, aTrigger)
+			parseAttackResult(aBag, l, r, aTrigger)
+			parseACBonus(aBag, aPowerWords, rReact)
+		end
+	end
+	if not f then l,r,f = sequencePos(aBag, {"when", {"creature", "humanoid"}, "dies"}) -- Soul Cage
+		if f then
+			aTrigger[DIES] = true
+			rReact.isOther = true; rReact.isSelf = false
+			parseDistance(aBag, aPowerWords, rReact)
+			parseVision(aBag, l, r, aTrigger)
+		end
+	end
+	rReact.aTrigger = aTrigger
+	return rReact
+end
+
 local enemy = {"creature", "enemy", "attacker"}
 local hitsOrMisses = {"hits", "misses", "targets"}
 local otherOrAlly = {"another","other","ally","allies"}
@@ -814,7 +862,7 @@ function parseAttackResult(aBag, l, r, aTrigger)
 end
 
 function parseVision(aBag, l, r, aTrigger)
-	if hasWordsWithin(aBag, l, r, {"can","see"}) or hasWordsWithin(aBag, l, r, {"able","to","see"}) then aTrigger[VISION] = true end
+	if hasWordsWithin(aBag, l, r, {"can","see"}) or hasWordsWithin(aBag, l, r, {"able","to","see"}) or hasWordsWithin(aBag, l, r, {"see", "creature"}) then aTrigger[VISION] = true end
 end
 
 function parseDamageType(aPowerWords, l, r)
@@ -834,7 +882,7 @@ end
 
 function parseACBonus(aBag, aWords, rReact)
 	local nACPos = 0
-	local l, _, f = sequencePos(aBag, {{"gains", "gain"}, "bonus", "ac"})
+	local l, _, f = sequencePos(aBag, {{"gains", "gain", "have"}, "bonus", "ac"})
 	if f then nACPos = l + 2
 	else
 		l, _, f = sequencePos(aBag, {"add", "to", "ac"})
@@ -843,13 +891,16 @@ function parseACBonus(aBag, aWords, rReact)
 	if nACPos ~= 0 then rReact.nACBonus = tonumber(aWords[nACPos]); end
 end
 
-function makeAppearanceMap(aPowerWords, nLim)
+function makeAppearanceMap(aPowerWords, nLim, nOffset)
 	result = {}
+	if nOffset == nil then nOffset = 0 end
 	for i, w in ipairs(aPowerWords) do
 		--uncomment to remove "'s" like in "balor's"
 		--if #w > 2 and w:sub(#w-1, #w-1) == "'" then w = w:sub(0, -2) end
-		if result[w] == nil then result[w] = i end
-		if nLim ~= nil and i > nLim then return result end
+		if i > nOffset then
+			if result[w] == nil then result[w] = i end
+			if nLim ~= nil and i > nLim + nOffset then return result end
+		end
 	end
 	return result
 end
