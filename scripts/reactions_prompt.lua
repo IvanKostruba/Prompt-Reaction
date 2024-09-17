@@ -44,6 +44,15 @@ function onInit()
 	PowerManager.performActionReProOrig = PowerManager.performAction
 	PowerManager.performAction = performActionDecorator
 
+	ActionCheck.onRollReProOrig = ActionCheck.onRoll
+	ActionCheck.onRoll = checkRollDecorator
+	-- have to re-register since we replaced the registered function
+	ActionsManager.registerResultHandler("check", ActionCheck.onRoll)
+
+	ActionSkill.onRollReProOrig = ActionSkill.onRoll
+	ActionSkill.onRoll = skillRollDecorator
+	ActionsManager.registerResultHandler("skill", ActionSkill.onRoll)
+
 	CombatManager.setCustomTurnStart(onTurnStart) -- adds a listener, no need for a decorator
 end
 
@@ -110,6 +119,8 @@ function insertReaction(sName, id, r, isBulk)
 end
 
 function extractID(rActor)
+	-- this can happen then check is rolled from a party sheet and some PCs are not in tracker.
+	if rActor == nil or rActor.sCTNode == nil then return nil end
 	local _,_,reactorID = string.find(rActor.sCTNode, "-(%d+)$")
 	return reactorID
 end
@@ -147,10 +158,14 @@ local DIES = "DIES"
 local KILLS = "KILLS"
 local ROLL_SAVE = "RSAVE"
 local FAILS_SAVE = "SAVEF"
+local PASS_SAVE = "SAVES"
+local FAILS_ATTR = "ATTRF"
+local PASS_ATTR = "ATTRS"
 local STARTS_TURN = "TURN"
 local CRIT = "CRIT"
 local HEAL = "HEAL"
 local ATK_FAIL = "ATK_FAIL"
+local ATK_HITS = "ATK_HITS"
 local BLOODIED = "BLOODIED"
 
 -- rOrigTarget always come from the roll
@@ -220,7 +235,7 @@ function tryTriggerReaction(aAction, rReact, rTarget, rOrigTarget, rSource)
 end
 
 function measureDistance(nodeT, rOther)
-	if nodeT == nil or rOther == nil then return nil end
+	if nodeT == nil or rOther == nil or rOther.sCTNode == nil then return nil end
 	local tt = Token.getToken(DB.getValue(nodeT, "tokenrefnode", ""), DB.getValue(nodeT, "tokenrefid", ""))
 	local nodeSrc = DB.findNode(rOther.sCTNode)
 	local st = Token.getToken(DB.getValue(nodeSrc, "tokenrefnode", ""), DB.getValue(nodeSrc, "tokenrefid", ""))
@@ -234,9 +249,11 @@ end
 function matchAllReactions(aAction, rTarget, rSource)
 	if rTarget ~= nil then
 		local reactorID = extractID(rTarget)
-		if ReactionOnSelf[reactorID] ~= nil then
-			for _, rs in ipairs(ReactionOnSelf[reactorID]) do
-				tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
+		if reactorID ~= nil then
+			if ReactionOnSelf[reactorID] ~= nil then
+				for _, rs in ipairs(ReactionOnSelf[reactorID]) do
+					tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
+				end
 			end
 		end
 	end
@@ -265,7 +282,13 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 	if rRoll.sRange == "M" then aAction.aFlags[ATK_MELEE] = true
 	elseif rRoll.sRange == "R" then aAction.aFlags[ATK_RANGED] = true end
 	matchAllReactions(aAction, rTarget, rSource)
-	if aAction.aFlags[IS_MISSED] and rSource ~= nil then matchAllReactions({aFlags={[ATK_FAIL]=true}}, rSource, rTarget) end
+	if rSource ~= nil then
+		local flg = {}
+		if aAction.aFlags[IS_HIT] then flg[ATK_HITS]=true
+		else flg[ATK_FAIL]=true end
+		-- reactions targeted at the attacker
+		matchAllReactions({aFlags=flg}, rSource, rTarget)
+	end
 	if rRoll.sResult == "crit" then matchAllReactions({aFlags={[CRIT]=true}}, rTarget, rSource) end
 end
 
@@ -316,9 +339,11 @@ function applySaveDecorator(rSource, rOrigin, rAction, sUser)
 	ctListScan(rSource)
 	-- ROLL_SAVE can be added here
 	if rAction.nTarget > 0 then
-		if rAction.nTotal < rAction.nTarget then
-			matchAllReactions({aFlags={[FAILS_SAVE]=true}}, rSource, rOrigin)
-		end
+		local flg={}
+		if rAction.nTotal < rAction.nTarget then flg[FAILS_SAVE] = true
+		else flg[PASS_SAVE] = true end
+		-- rOrigin is who caused the save, we are interested only in who rolls for these reactions.
+		matchAllReactions({aFlags=flg}, rSource, rSource)
 	end
 end
 
@@ -365,6 +390,28 @@ function performActionDecorator(draginfo, rActor, rAction, nodePower)
 		matchAllReactions({aFlags={[CAST]=true}}, rActor, rActor)
 	end
 	return result
+end
+
+function checkRollDecorator(rSource, rTarget, rRoll)
+	-- call the original onRoll method
+	ActionCheck.onRollReProOrig(rSource, rTarget, rRoll)
+	performAttributeCheck(rSource, rTarget, rRoll)
+end
+
+function skillRollDecorator(rSource, rTarget, rRoll)
+	-- call the original onRoll method
+	ActionSkill.onRollReProOrig(rSource, rTarget, rRoll)
+	performAttributeCheck(rSource, rTarget, rRoll)
+end
+
+function performAttributeCheck(rSource, rTarget, rRoll)
+	if rRoll.nTarget ~= nil and rRoll.nTarget ~= 0 then
+		local rollTotal = ActionsManager.total(rRoll);
+		local flg={}
+		if rollTotal - rRoll.nTarget < 0 then flg[FAILS_ATTR] = true
+		else flg[PASS_ATTR] = true end
+		matchAllReactions({aFlags=flg}, rSource, rOrigin)
+	end
 end
 
 function sendChatMessage(rTarget, rReact, rSpecial)
@@ -425,11 +472,15 @@ function sendParsingMessage(sName, rReact, isOther, isBulk)
 	if tr[KILLS] then t = t .. " kills target;" end
 	if tr[DIES] then t = t .. " dies;" end
 	if tr[FAILS_SAVE] then t = t .. " fails a save;" end
+	if tr[PASS_SAVE] then t = t .. " succeeds on a save;" end
 	if tr[HEAL] then t = t .. " regains hp;" end
 	if tr[STARTS_TURN] then t = t .. " starts its turn;" end
 	if tr[ATK_FAIL] then t = t .. " fails attack roll;" end
+	if tr[ATK_HITS] then t = t.. " succeeds on an attack roll;" end
 	if tr[CAST] then t = t .. " casts a spell;" end
 	if tr[BLOODIED] then t = t .. " becomes bloodied;" end
+	if tr[FAILS_ATTR] then t = t .. " fails an attribute check;" end
+	if tr[PASS_ATTR] then t = t .. " succeeds on an attribute check;" end
 	if rReact.nDistEnemy ~= nil then t = t .. string.format(" enemy within %d feet;", rReact.nDistEnemy)
 	elseif rReact.nDistAlly ~= nil then t = t .. string.format(" within %d feet;", rReact.nDistAlly) end
 	if rReact.nACBonus ~= nil then t = t .. string.format(" AC bonus +%d;", rReact.nACBonus) end
@@ -668,14 +719,12 @@ function parseSpell(sName, aActorName, aPowerWords)
 		if f then
 			aTrigger[CAST] = true
 			rReact.isOther = true; rReact.isSelf = false
-			parseDistance(aBag, aPowerWords, rReact)
 			parseVision(aBag, l, r, aTrigger)
 		end
 	end
 	if not f then l,r,f = findMonsterDamaged(aBag, {"you"}) -- Hellish Rebuke
 		if f then
 			aTrigger[DAMAGE] = true
-			parseDistance(aBag, aPowerWords, rReact)
 			parseVisionAndDamage(aBag, l, r, aPowerWords, aTrigger, rReact)
 		end
 	end
@@ -690,10 +739,18 @@ function parseSpell(sName, aActorName, aPowerWords)
 		if f then
 			aTrigger[DIES] = true
 			rReact.isOther = true; rReact.isSelf = false
+			parseVision(aBag, l, r, aTrigger)
+		end
+	end
+	if not f then l,r,f = sequencePos(aBag, {"when", "creature", "succeeds", "attack", "ability", "saving"}) -- Silvery Barbs
+		if f then
+			aTrigger={[ATK_HITS]=true;[PASS_ATTR]=true;[PASS_SAVE]=true}
+			rReact.isOther = true; rReact.isSelf = false
 			parseDistance(aBag, aPowerWords, rReact)
 			parseVision(aBag, l, r, aTrigger)
 		end
 	end
+	parseDistance(aBag, aPowerWords, rReact)
 	rReact.aTrigger = aTrigger
 	return rReact
 end
