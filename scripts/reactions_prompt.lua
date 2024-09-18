@@ -66,7 +66,7 @@ function addReaction(aTable, sID, rReact)
 end
 
 function ctListScan(ctNode)
-	if isCTScanDone then return false end
+	if isCTScanDone or (type(ctNode) ~= "databasenode" and ctNode.sCTNode == nil) then return false end
 	if type(ctNode) ~= "databasenode" then ctNode = DB.findNode(ctNode.sCTNode) end
 	for _,v in pairs(DB.getChildren(DB.getParent(ctNode))) do
 		scanActor(v, true)
@@ -405,12 +405,14 @@ function skillRollDecorator(rSource, rTarget, rRoll)
 end
 
 function performAttributeCheck(rSource, rTarget, rRoll)
+	ctListScan(rSource)
 	if rRoll.nTarget ~= nil and rRoll.nTarget ~= 0 then
 		local rollTotal = ActionsManager.total(rRoll);
 		local flg={}
 		if rollTotal - rRoll.nTarget < 0 then flg[FAILS_ATTR] = true
 		else flg[PASS_ATTR] = true end
-		matchAllReactions({aFlags=flg}, rSource, rOrigin)
+		-- rSource is the actor who rolls the check
+		matchAllReactions({aFlags=flg}, rSource, rSource)
 	end
 end
 
@@ -535,6 +537,15 @@ function parseReaction(sName, aActorName, aPowerWords)
 			aTrigger[DAMAGE] = true
 			aTrigger[IS_HIT] = true
 			parseAttackRange(aBag, l, r, aTrigger)
+		
+		end
+	end
+	-- deliberately put before findMonsterDamaged
+	if not f then l,r,f = findOtherDamaged(aBag, aActorName)
+		if f then
+			parseDistance(aBag, aPowerWords, rReact, true)
+			aTrigger[DAMAGE] = true
+			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
 	if not f then l,r,f = findMonsterDamaged(aBag, aActorName)
@@ -564,13 +575,6 @@ function parseReaction(sName, aActorName, aPowerWords)
 			parseAttackResult(aBag, l, r, aTrigger)
 			parseDistance(aBag, aPowerWords, rReact, true)
 			parseACBonus(aBag, aPowerWords, rReact)
-			rReact.isOther = true; rReact.isSelf = false
-		end
-	end
-	if not f then l,r,f = findOtherDamaged(aBag, aActorName)
-		if f then
-			parseDistance(aBag, aPowerWords, rReact, true)
-			aTrigger[DAMAGE] = true
 			rReact.isOther = true; rReact.isSelf = false
 		end
 	end
@@ -755,6 +759,17 @@ function parseSpell(sName, aActorName, aPowerWords)
 	return rReact
 end
 
+local creatureTypes = {}
+function creatureTypesList()
+	if next(creatureTypes) == nil then
+		for _,v in ipairs(DataCommon.creaturetype) do table.insert(creatureTypes, v) end
+		for _,v in ipairs(DataCommon.creaturesubtype) do table.insert(creatureTypes, v) end
+		table.insert(creatureTypes, "hobgoblin") -- technically those are 'goblinoids' but they referred by the species name in some reactions
+		table.insert(creatureTypes, "goblin")
+	end
+	return creatureTypes
+end
+
 local enemy = {"creature", "enemy", "attacker"}
 local hitsOrMisses = {"hits", "misses", "targets"}
 local otherOrAlly = {"another","other","ally","allies"}
@@ -845,17 +860,21 @@ function findOtherIsHit(aBag, aName)
 	return sequencePos(aBag, {{"creature", unpack(otherOrAlly)}, isHit, {"by", "with"}, "attack"})
 end
 
+-- When a non-minion hobgoblin who Varrox can see within 60 feet of him takes damage,
 function findOtherDamaged(aBag, aName)
-	return sequencePos(aBag, {otherOrAlly, "takes", "damage"})
+	local l,r,f = sequencePos(aBag, {otherOrAlly, "takes", "damage"})
+	if not f then l,r,f = sequencePos(aBag, {creatureTypesList(), "takes", "damage"}) end
+	return l,r,f
 end
 
 -- When an Undead under the vetala'a control is reduced to 0 hp, the vetala can force it to explode.
 -- In response to a gnoll being reduced to 0 hit points
--- When a non-minion hobgoblin who Varrox can see within 60 feet of him takes damage,
 function findOtherDies(aBag, aName)
 	local l,r,f = sequencePos(aBag, {otherOrAlly, "dies"})
 	if not f then l,r,f = sequencePos(aBag, {otherOrAlly, {"reduced", "drops"}, {"0", "zero"}}) end
 	if not f then l,r,f = sequencePos(aBag, {"creature", aName, "see", "dies"}) end
+	if not f then l,r,f = sequencePos(aBag, {creatureTypesList(), "dies"}) end
+	if not f then l,r,f = sequencePos(aBag, {creatureTypesList(), {"reduced", "drops"}, {"0", "zero"}}) end
 	return l,r,f
 end
 
