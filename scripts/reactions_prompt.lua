@@ -287,7 +287,7 @@ function applyAttackDecorator(rSource, rTarget, rRoll)
 		if aAction.aFlags[IS_HIT] then flg[ATK_HITS]=true
 		else flg[ATK_FAIL]=true end
 		-- reactions targeted at the attacker
-		matchAllReactions({aFlags=flg}, rSource, rTarget)
+		matchAllReactions({aFlags=flg}, rSource, rSource)
 	end
 	if rRoll.sResult == "crit" then matchAllReactions({aFlags={[CRIT]=true}}, rTarget, rSource) end
 end
