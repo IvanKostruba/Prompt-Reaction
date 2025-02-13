@@ -32,7 +32,7 @@ The extension can detect and process not only simple triggers like “this creat
 * Creature starts its turn. (Only triggered by PCs)
 * The monster or an ally fails a saving throw.
   * "when another creature [within X feet] fails a saving throw ..."
-  * "when [monster name] fails a saving throw ..."
+  * "when [monster name] fails a saving throw ..." (this is parsed in traits section only, typically used for legendary resistances).
 * The monster suffers a crit.
   * Typical wording is "when a creature scores a critical hit against the monster_name" or "when the monster_name suffers a critical hit".
 * Monster fails an attack.
