@@ -185,7 +185,7 @@ function tryTriggerReaction(aAction, rReact, rTarget, rOrigTarget, rSource)
 		end
 	end
 	local eff = {}
-	local _, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	local nodeTarget = ActorManager.getCTNode(rTarget)
 	local tokenvis = DB.getValue(nodeTarget,"tokenvis",1)
 	if tokenvis == 0 and OptionsManager.getOption("REPRO_WARN_HIDDEN_TOKENS") == "off" then return false end
 	local groupvis = DB.getValue(nodeTarget,"groupvis",1)
@@ -247,13 +247,14 @@ function measureDistance(nodeT, rOther)
 end
 
 function matchAllReactions(aAction, rTarget, rSource)
-	if rTarget ~= nil then
-		local reactorID = extractID(rTarget)
-		if reactorID ~= nil then
-			if ReactionOnSelf[reactorID] ~= nil then
-				for _, rs in ipairs(ReactionOnSelf[reactorID]) do
-					tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
-				end
+	if rTarget == nil then
+		return
+	end
+	local reactorID = extractID(rTarget)
+	if reactorID ~= nil then
+		if ReactionOnSelf[reactorID] ~= nil then
+			for _, rs in ipairs(ReactionOnSelf[reactorID]) do
+				tryTriggerReaction(aAction, rs, rTarget, rTarget, rSource)
 			end
 		end
 	end
@@ -321,7 +322,7 @@ function applyDamageDecorator(rSource, rTarget, rRoll)
 		matchAllReactions({aFlags={[DIES]=true}}, rTarget, rSource)
 		matchAllReactions({aFlags={[KILLS]=true}}, rSource, rSource)
 	else
-		local _, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+		local nodeTarget = ActorManager.getCTNode(rTarget)
 		local bloodiedVal = DB.getValue(nodeTarget,"hptotal",0)/2
 		local wounds = DB.getValue(nodeTarget,"wounds",0)
 		if bloodiedVal == 0 or wounds < bloodiedVal then return end
