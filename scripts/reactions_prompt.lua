@@ -1,3 +1,4 @@
+OOB_MSGTYPE_REPRO_CHAT = "repro_chat"
 local CombatGroupsLoaded = false
 
 function registerOptions()
@@ -54,6 +55,8 @@ function onInit()
 	ActionsManager.registerResultHandler("skill", ActionSkill.onRoll)
 
 	CombatManager.setCustomTurnStart(onTurnStart) -- adds a listener, no need for a decorator
+
+	OOBManager.registerOOBMsgHandler(ReactionsPrompt.OOB_MSGTYPE_REPRO_CHAT, handleChatMessage);
 end
 
 local isCTScanDone = false
@@ -422,7 +425,6 @@ function sendChatMessage(rTarget, rReact, rSpecial)
 	if sOutput == "off" then return end
 	local sName = StringManager.trim(DB.getValue(rReact.vDBRecord, "name", ""))
 	local msg = ChatManager.createBaseMessage(rTarget)
-	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
 	msg.icon = "react_prompt"
 	msg.text = string.format("%s possibly triggered", sName)
 	if rSpecial.nDistWant ~= nil then
@@ -445,7 +447,54 @@ function sendChatMessage(rTarget, rReact, rSpecial)
 	elseif sOutput == "npc_ref" then
 		msg.shortcuts = {{description=sName, class="npc", recordname=DB.getPath(rTarget.sCreatureNode)}}
 	end
-	Comm.deliverChatMessage(msg)
+	processMessage(msg)
+end
+
+function processMessage(msg)
+	if Session.IsHost and OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then
+		Comm.addChatMessage(msg)
+		return
+	end
+	local m = {
+		type = ReactionsPrompt.OOB_MSGTYPE_REPRO_CHAT,
+		msg_sender = msg.sender,
+		msg_text = msg.text,
+		msg_icon = msg.icon,
+		msg_font = msg.font,
+	};
+	if msg.shortcuts ~= nil then
+		local s = msg.shortcuts[1]
+		m.sc_class = s.class
+		m.sc_desc = s.description
+		m.sc_recname = s.recordname
+	end
+	if msg.assets ~= nil then
+		local a = msg.assets[1]
+		m.asset_h = a.h
+		m.asset_w = a.w
+		m.asset_name = a.name
+	end
+	Comm.deliverOOBMessage(m);
+end
+
+function handleChatMessage(m)
+	local message = {
+		sender = m.msg_sender,
+		text = m.msg_text,
+		icon = m.msg_icon,
+		font = m.msg_font,
+	}
+	if m.asset_name ~= nil then
+		message.assets = {{name = m.asset_name, h = m.asset_h, w = m.asset_w}}
+	end
+	if m.sc_class ~= nil then
+		message.shortcuts = {{description=m.sc_desc, class=m.sc_class, recordname=m.sc_recname}}
+	end
+	if Session.IsHost then
+		Comm.addChatMessage(message)
+	elseif OptionsManager.getOption("REPRO_RECIPIENT") ~= "gm" then
+		Comm.addChatMessage(message)
+	end
 end
 
 function sendParsingMessage(sName, rReact, isOther, isBulk)
@@ -488,13 +537,12 @@ function sendParsingMessage(sName, rReact, isOther, isBulk)
 	elseif rReact.nDistAlly ~= nil then t = t .. string.format(" within %d feet;", rReact.nDistAlly) end
 	if rReact.nACBonus ~= nil then t = t .. string.format(" AC bonus +%d;", rReact.nACBonus) end
 	msg.text = t
-	Comm.deliverChatMessage(msg)
+	Comm.addChatMessage(msg)
 end
 
 function sendWarningMessage(rTarget, eff)
 	if OptionsManager.getOption("REPRO_EFFECT_WARN") == "off" then return end
 	local msg = ChatManager.createBaseMessage(rTarget)
-	if OptionsManager.getOption("REPRO_RECIPIENT") == "gm" then msg.secret = true end
 	msg.icon = "cond_stun"
 	msg.text = "reaction impossible: creature"
 	if eff.hasReacted then msg.text = msg.text .. " already reacted"
@@ -507,7 +555,7 @@ function sendWarningMessage(rTarget, eff)
 		if eff.isBlinded then msg.text = msg.text .. " must see the target but is blinded" end
 		if eff.isInvisible then msg.text = msg.text .. " must see the target but it's invisible" end
 	end
-	Comm.deliverChatMessage(msg)
+	processMessage(msg)
 end
 
 function parseReaction(sName, aActorName, aPowerWords)

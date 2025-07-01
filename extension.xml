@@ -26,12 +26,13 @@
 		1.1.4 - Added parsing of reaction spells.
 		1.1.5 - Added special triggers and processing of Silvery Barbs spell.
 		1.1.6 - Fixed nil dereference error when rolling heal wihtout target.
+		1.2.0 - Changed message delivery code to fix message visibility bug.
 -->
-<root version="1.0" release="1.1.6">
-	<announcement text="illahad's Prompt Reaction v1.1.6 for 5E ruleset." font="emotefont" icon="react_prompt"/>
+<root version="1.0" release="1.2.0">
+	<announcement text="illahad's Prompt Reaction v1.2.0 for 5E ruleset." font="emotefont" icon="react_prompt"/>
  	<properties>
 		<name>Feature: illahad's Prompt Reaction</name>
-		<version>1.1.6</version>
+		<version>1.2.0</version>
 		<author>illahad (Ivan Kostruba)</author>
 		<description>When a monster has a reaction and its trigger comes up, a prompt will appear in the chat.</description>
 		<ruleset>
